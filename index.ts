@@ -1,11 +1,13 @@
 import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
+import path from 'path';
 
 const app = express();
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
 // Middleware
 app.use(express.json());
+app.use(express.static(path.join(process.cwd(), 'public')));
 
 // Simple health check
 app.get('/health', (_req: Request, res: Response) => {
