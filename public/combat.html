@@ -125,6 +125,20 @@
         ▼
     </div>
 </div>
+<script>
+(function() {
+    const box = document.getElementById('dialogue-box');
+    function applyMobileOffset() {
+        if (window.matchMedia('(max-width: 767px)').matches) {
+            box.style.bottom = '60px'; // raise it a bit on mobile
+        } else {
+            box.style.bottom = '0';
+        }
+    }
+    applyMobileOffset();
+    window.addEventListener('resize', applyMobileOffset);
+})();
+</script>
 
 <div id="app" class="h-screen flex flex-col relative z-0">
     <header class="bg-slate-900/80 p-3 text-center border-b border-slate-700 backdrop-blur-sm flex justify-between items-center px-4 sm:px-8 z-10 relative">
@@ -193,6 +207,7 @@ let GameState = {
     phase: 'DIALOGUE', // Start in DIALOGUE phase
     turn: 1,
     dragStart: null,
+    dragSourceId: null,
     dragCurrent: null,
     visualActions: [],
     actedEnemies: new Set(),
@@ -200,7 +215,8 @@ let GameState = {
     // Dialogue State
     currentScript: [],
     scriptIndex: 0,
-    isTyping: false
+    isTyping: false,
+    postCombatCallback: null
 };
 
 const Script = [
@@ -226,6 +242,19 @@ const Script = [
     { speaker: "You", text: "aight i think i can deal with that" },
 ];
 
+// Post-combat dialogue scripts
+const PostVictoryScript = [
+    { speaker: "D.Y.L.A.N", text: "yoo nice job bro" },
+    { speaker: "You", text: "dude i have a lot of questions, like what does rolling mean and what ignoring and stuff?" },
+    { speaker: "D.Y.L.A.N", text: "oh right i forgot about those, basically rolling means you roll a dice to determine if your character or enemy hits" },
+    { speaker: "You", text: "ohhhhhh" },
+    { speaker: "D.Y.L.A.N", text: "and ignoring means that the enemy just attacks you no matter what, so you have to trade damage with them" },
+    { speaker: "You", text: "dang thats rough" },
+    { speaker: "D.Y.L.A.N", text: "yeah tell me about it, but hey you did great for your first time!" },
+    { speaker: "You", text: "thanks dude, couldnt have done it without you" },
+    { speaker: "D.Y.L.A.N", text: "anytime bro, anytime" },
+    { speaker: "D.Y.L.A.N", text: "well let's move on to the next stage!!" }
+];
 
 // ==========================================
 // 2. DIALOGUE ENGINE
@@ -237,11 +266,15 @@ const btnTurn = document.getElementById('btn-turn');
 
 let typingTimerId = null; // Variable to hold the setTimeout ID for skipping
 
-function startDialogue(script) {
+function startDialogue(script, callback) {
     GameState.currentScript = script;
     GameState.scriptIndex = 0;
+    GameState.postCombatCallback = (typeof callback === 'function') ? callback : null;
     dialogueBox.style.opacity = 1;
     dialogueBox.classList.remove('hidden');
+    // Prevent user actions during dialogue
+    btnTurn.disabled = true;
+    GameState.phase = 'DIALOGUE';
     nextDialogue();
 }
 
@@ -254,18 +287,40 @@ function displayLine(line) {
     const textContent = line.text;
     let i = 0;
     
+    // Enable normal wrapping
+    textEl.style.whiteSpace = 'normal';
+    textEl.style.wordBreak = 'break-word';
+    textEl.style.overflowWrap = 'anywhere';
+
     const type = () => {
         if (i < textContent.length) {
             const char = textContent.charAt(i);
-            // Use innerHTML and &nbsp; to guarantee space visibility during typing animation
+
+            // Use normal spaces so wrapping can occur
             if (char === ' ') {
-                textEl.innerHTML += '&nbsp;';
+                textEl.appendChild(document.createTextNode(' '));
             } else {
-                textEl.innerHTML += char;
+                textEl.appendChild(document.createTextNode(char));
             }
             i++;
-            // Store the timer ID for clearing
-            typingTimerId = setTimeout(type, 15); 
+
+            // Soft-break extremely long words (prevent overflow)
+            const words = textEl.textContent.split(' ');
+            const lastWord = words[words.length - 1];
+            if (lastWord && lastWord.length > 20) { // threshold adjustable
+                const base = words.slice(0, -1).join(' ');
+                textEl.textContent = base + (base.length ? ' ' : '');
+                // Insert <wbr> every 15 chars for long word
+                const segments = lastWord.match(/.{1,15}/g) || [lastWord];
+                segments.forEach((seg, idx) => {
+                    textEl.appendChild(document.createTextNode(seg));
+                    if (idx < segments.length - 1) {
+                        textEl.appendChild(document.createElement('wbr'));
+                    }
+                });
+            }
+
+            typingTimerId = setTimeout(type, 15);
         } else {
             GameState.isTyping = false;
             typingTimerId = null;
@@ -281,12 +336,12 @@ window.nextDialogue = function() {
             clearTimeout(typingTimerId);
             typingTimerId = null;
         }
+
         
-        // GameState.scriptIndex - 1 points to the current line being displayed
-        const line = GameState.currentScript[GameState.scriptIndex - 1]; 
         
-        // Display the full text instantly, ensuring spaces are preserved
-        textEl.innerHTML = line.text.replace(/ /g, '&nbsp;');
+        const line = GameState.currentScript[GameState.scriptIndex - 1];
+        // Use textContent so spaces remain break points (avoid mid-word breaks caused by &nbsp;)
+        textEl.textContent = line.text;
         GameState.isTyping = false;
         return;
     }
@@ -299,6 +354,16 @@ window.nextDialogue = function() {
         // Dialogue finished
         dialogueBox.style.opacity = 0;
         setTimeout(() => dialogueBox.classList.add('hidden'), 300);
+
+        // If a post-combat callback is registered, call it instead of returning to planning
+        if (GameState.postCombatCallback) {
+            const cb = GameState.postCombatCallback;
+            GameState.postCombatCallback = null;
+            // Invoke callback (e.g., to show game-over modal)
+            try { cb(); } catch (e) { console.error(e); }
+            return;
+        }
+
         GameState.phase = 'PLANNING';
         btnTurn.disabled = false;
         log("Ready for action. Assign targets.", 'sys');
@@ -643,6 +708,33 @@ async function resolveUnengagedEnemies() {
 
 function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+// Auto-scroll the page when a drag position is near the viewport edges.
+// `y` is the clientY coordinate of the pointer/touch.
+function autoScrollIfNeeded(y) {
+    try {
+        const threshold = 80; // px from edge to start scrolling
+        const maxStep = 18; // max px per frame to scroll
+        const scrollEl = document.scrollingElement || document.documentElement;
+        if (!scrollEl) return;
+
+        // If the page is not scrollable, nothing to do
+        if (scrollEl.scrollHeight <= window.innerHeight) return;
+
+        if (y < threshold) {
+            const pct = (threshold - y) / threshold; // 0..1
+            const amt = Math.max(2, Math.round(pct * maxStep));
+            window.scrollBy(0, -amt);
+        } else if (window.innerHeight - y < threshold) {
+            const pct = (threshold - (window.innerHeight - y)) / threshold; // 0..1
+            const amt = Math.max(2, Math.round(pct * maxStep));
+            window.scrollBy(0, amt);
+        }
+    } catch (e) {
+        // Fail silently — QoL helper shouldn't break combat
+        console.error('autoScrollIfNeeded error', e);
+    }
+}
+
 function checkDeaths() {
     Object.keys(GameState.units).forEach(id => {
         const u = GameState.units[id];
@@ -665,8 +757,15 @@ function checkWinLoss() {
     const pcs = Object.keys(GameState.units).filter(k => k.startsWith('PC') && GameState.units[k].hp > 0);
     const ens = Object.keys(GameState.units).filter(k => k.startsWith('EN') && GameState.units[k].hp > 0);
     
-    if (pcs.length === 0) { showGameOver("DEFEAT", "Your squad was wiped out.", "text-red-500"); return true; }
-    if (ens.length === 0) { showGameOver("VICTORY", "Sector Secured.", "text-blue-400"); return true; }
+    if (pcs.length === 0) {
+        // Immediately show defeat modal (no dialogue)
+        showGameOver("DEFEAT", "Your squad was wiped out.", "text-red-500");
+        return true;
+    }
+    if (ens.length === 0) {
+        startDialogue(PostVictoryScript, () => showGameOver("VICTORY", "Sector Secured.", "text-blue-400"));
+        return true;
+    }
     return false;
 }
 
@@ -697,7 +796,14 @@ let touchDragState = {
 document.addEventListener('dragover', e => { 
     e.preventDefault(); 
     if (GameState.phase === 'PLANNING') {
-        GameState.dragCurrent = { x: e.clientX, y: e.clientY }; 
+        // Keep the arrow base synced with the source element's current center
+        if (GameState.dragSourceId) {
+            const c = getCenter(GameState.dragSourceId);
+            if (c) GameState.dragStart = c;
+        }
+        GameState.dragCurrent = { x: e.clientX, y: e.clientY };
+        // Auto-scroll when dragging near viewport edges for QoL
+        autoScrollIfNeeded(e.clientY);
     }
 });
 
@@ -708,6 +814,7 @@ function handleDragStart(e) {
     if (GameState.units[id].hp <= 0) { e.preventDefault(); return; }
     e.dataTransfer.setData('text/plain', id);
     e.dataTransfer.setDragImage(new Image(), 0, 0);
+    GameState.dragSourceId = id;
     GameState.dragStart = getCenter(id);
 }
 
@@ -735,8 +842,15 @@ function handleDrop(e) {
         }
     }
     GameState.dragStart = null;
+    GameState.dragSourceId = null;
     document.querySelectorAll('.target-hover').forEach(el => el.classList.remove('target-hover'));
 }
+
+// Ensure dragend clears drag state for desktop drags
+document.addEventListener('dragend', e => {
+    GameState.dragStart = null;
+    GameState.dragSourceId = null;
+});
 
 // ==========================================
 // MOBILE: TOUCH EVENTS
@@ -801,7 +915,14 @@ function handleTouchMove(e) {
     e.preventDefault(); // Prevent scrolling
     
     const touch = e.touches[0];
+    // Keep arrow base synced with the source card center (touch)
+    if (touchDragState.srcId) {
+        const c = getCenter(touchDragState.srcId);
+        if (c) GameState.dragStart = c;
+    }
     GameState.dragCurrent = { x: touch.clientX, y: touch.clientY };
+    // Auto-scroll when dragging near viewport edges on touch
+    autoScrollIfNeeded(touch.clientY);
     
     // Find element under touch point
     const elementAtPoint = document.elementFromPoint(touch.clientX, touch.clientY);
