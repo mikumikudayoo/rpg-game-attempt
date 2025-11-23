@@ -1,0 +1,6 @@
+{
+    "Dagger Flurry":  { "damage": 5,  "minroll": 0, "rolls": 3, "type": "Rolling" },
+    "Flare Burst":    { "damage": 3,  "minroll": 0, "rolls": 0, "type": "Ignore" },
+    "Crushing Swing": { "damage": 8,  "minroll": 0, "rolls": 4, "type": "Rolling" },
+    "Rend Bite":      { "damage": 10, "minroll": 0, "rolls": 2, "type": "Rolling" }
+}

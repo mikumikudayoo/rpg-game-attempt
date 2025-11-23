@@ -1,0 +1,7 @@
+{
+    "Alpha": 	{ "maxHp": 70, "role": "Tank", 	"ability": "Sustain Protocol" },
+    "Zenith":   { "maxHp": 45, "role": "DPS", 	"ability": "Focused Fire" },
+    "Poly": 	{ "maxHp": 50, "role": "AoE", 	"ability": "Chain Strike" },
+    "Merui": 	{ "maxHp": 60, "role": "Healer","ability": "Reconstruct" },
+    "Locus": 	{ "maxHp": 40, "role": "DPS", 	"ability": "Quick Attack" }
+}

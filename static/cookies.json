@@ -1,0 +1,27 @@
+{
+    "dev_cookie_DO_NOT_USE": {
+        "description": "cookie gifts :3 they are like ego gifts from limbus company but instead of simply owning them, you have to use them on a specific character. every cookie gift CAN be used on every character. they are NOT consumed, they can be reused. the effect is just only applied to the character you use it on.",
+        "technical_explanation": "owo",
+        "effect": { }
+    },
+    "sukkar": {
+        "description": "wow you got a sukkar from forsaken!!!!",
+        "technical_explanation": "Increases max HP by 20 for the character equipped.",
+        "effect": { "maxHp": 20 }
+    },
+    "non crispy stick o": {
+        "description": "totally not worn out by sitting in a jar for so long",
+        "technical_explanation": "Increases damage by 5 for the character equipped.",
+        "effect": { "damage": 5 }
+    },
+    "cellphone from the guy in exit 8": {
+        "description": "I SWEAR HE DIDNT HAVE IT!! WHY DID WE GO FORWARD???",
+        "technical_explanation": "Reduces incoming damage by 3 for the character equipped.",
+        "effect": { "damageReduction": 3 }
+    },
+    "a coconut jpg file that when deleted will crash the game for some reason": {
+        "description": "dude i swear the devs are high or smth",
+        "technical_explanation": "Increases healing done by 4 for the character equipped.",
+        "effect": { "heal": 4 }
+    }
+}

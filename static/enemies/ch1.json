@@ -1,0 +1,6 @@
+{
+    "Dagger":   { "maxHp": 15, "name": "Dagger",    "ability": "Dagger Flurry",   "passives": {} },
+    "Flare":    { "maxHp": 12, "name": "Flare",     "ability": "Flare Burst",     "passives": {} },
+    "Mace":     { "maxHp": 40, "name": "Mace",      "ability": "Crushing Swing",  "passives": { "thorns": 2 } },
+    "Crawler":  { "maxHp": 20, "name": "Crawler",   "ability": "Rend Bite",       "passives": {} }
+}

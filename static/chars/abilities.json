@@ -1,0 +1,42 @@
+{
+    "Sustain Protocol": {
+        "description": "Heals self for a small amount each turn.",
+        "type": "Adaptive",
+        "damage": 4,
+        "heal": 0,
+        "minroll": 0,
+        "rolls": 4
+    },
+    "Focused Fire": {
+        "description": "High damage attack with multiple dice rolls.",
+        "type": "Adaptive",
+        "damage": 10,
+        "heal": 0,
+        "minroll": 0,
+        "rolls": 6
+    },
+    "Chain Strike": {
+        "description": "Area of effect attack hitting multiple enemies.",
+        "type": "Adaptive",
+        "damage": 6,
+        "heal": 0,
+        "minroll": 0,
+        "rolls": 4
+    },
+    "Reconstruct": {
+        "description": "Heals an ally for a moderate amount.",
+        "type": "Adaptive",
+        "damage": 0,
+        "heal": 5,
+        "minroll": 0,
+        "rolls": 0
+    },
+    "Quick Attack": {
+        "description": "Fast attack with moderate damage.",
+        "type": "Adaptive",
+        "damage": 7,
+        "heal": 0,
+        "minroll": 0,
+        "rolls": 5
+    }
+}

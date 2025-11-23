@@ -173,17 +173,17 @@
 // ==========================================
 const UnitData = {
     PCs: {
-        "Alpha": 	{ maxHp: 70, role: "Tank", 	ability: { damage: 4, 	heal: 0, rolls: 4, type: "Adaptive", effect: "Sustain Protocol" } },
-        "Zenith": { maxHp: 45, role: "DPS", 	ability: { damage: 10, heal: 0, rolls: 6, type: "Adaptive", effect: "Focused Fire" } },
-        "Poly": 	{ maxHp: 50, role: "AoE", 	ability: { damage: 6, 	heal: 0, rolls: 4, type: "Adaptive", effect: "Chain Strike" } },
-        "Merui": 	{ maxHp: 60, role: "Healer",ability: { damage: 0, 	heal: 5, rolls: 0, type: "Adaptive", effect: "Reconstruct" } },
-        "Locus": 	{ maxHp: 40, role: "DPS", 	ability: { damage: 7, 	heal: 0, rolls: 5, type: "Adaptive", effect: "Quick Attack" } }
+        "Alpha": 	{ maxHp: 70, role: "Tank", 	ability: { damage: 4, 	heal: 0, minroll: 0, rolls: 4, type: "Adaptive", effect: "Sustain Protocol" } },
+        "Zenith": { maxHp: 45, role: "DPS", 	ability: { damage: 10, heal: 0, minroll: 0, rolls: 6, type: "Adaptive", effect: "Focused Fire" } },
+        "Poly": 	{ maxHp: 50, role: "AoE", 	ability: { damage: 6, 	heal: 0, minroll: 0, rolls: 4, type: "Adaptive", effect: "Chain Strike" } },
+        "Merui": 	{ maxHp: 60, role: "Healer",ability: { damage: 0, 	heal: 5, minroll: 0, rolls: 0, type: "Adaptive", effect: "Reconstruct" } },
+        "Locus": 	{ maxHp: 40, role: "DPS", 	ability: { damage: 7, 	heal: 0, minroll: 0, rolls: 5, type: "Adaptive", effect: "Quick Attack" } }
     },
     ENs: {
-        "Dagger": { maxHp: 15, name: "Dagger", ability: { damage: 5, 	rolls: 3, type: "Rolling" }, passives: {} },
-        "Flare": 	{ maxHp: 12, name: "Flare", 	ability: { damage: 3, 	rolls: 0, type: "Ignore" }, 	passives: {} },
-        "Mace": 	{ maxHp: 40, name: "Mace", 	ability: { damage: 8, 	rolls: 4, type: "Rolling" }, passives: { thorns: 2 } },
-        "Crawler":{ maxHp: 20, name: "Crawler",ability: { damage: 10, rolls: 2, type: "Rolling" }, passives: {} }
+        "Dagger": { maxHp: 15, name: "Dagger", ability: { damage: 5, 	minroll: 0, rolls: 3, type: "Rolling" }, passives: {} },
+        "Flare": 	{ maxHp: 12, name: "Flare", 	ability: { damage: 3, 	minroll: 0, rolls: 0, type: "Ignore" }, 	passives: {} },
+        "Mace": 	{ maxHp: 40, name: "Mace", 	ability: { damage: 8, 	minroll: 0, rolls: 4, type: "Rolling" }, passives: { thorns: 2 } },
+        "Crawler":{ maxHp: 20, name: "Crawler",ability: { damage: 10, minroll: 0, rolls: 2, type: "Rolling" }, passives: {} }
     }
 };
 
@@ -529,8 +529,13 @@ async function resolveDuel(srcId, tgtId) {
         vis.color = '#38bdf8'; // Cyan
         
         // Use modified rolls
-        const pcRoll = Math.floor(Math.random() * (src.ability.rolls + 1));
-        const enRoll = Math.floor(Math.random() * (tgt.ability.rolls + 1));
+        const pcMin = src.ability.minroll ?? 0;
+        const pcMax = src.ability.rolls ?? 0;
+        const enMin = tgt.ability.minroll ?? 0;
+        const enMax = tgt.ability.rolls ?? 0;
+
+        const pcRoll = pcMin >= pcMax ? pcMin : pcMin + Math.floor(Math.random() * (pcMax - pcMin + 1));
+        const enRoll = enMin >= enMax ? enMin : enMin + Math.floor(Math.random() * (enMax - enMin + 1));
         
         spawnFloatText(srcId, `🎲 ${pcRoll}`, 'text-cyan-300');
         spawnFloatText(tgtId, `🎲 ${enRoll}`, 'text-red-300');

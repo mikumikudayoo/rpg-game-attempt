@@ -1,12 +1,24 @@
 import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
-import path from 'path';
+import * as path from 'path';
+
+// Define the expected structure for clarity
+interface DialogueLine {
+    speaker: string;
+    text: string;
+}
+type DialoguePair = [DialogueLine[]] | [DialogueLine[], DialogueLine[]];
+interface ChapterDialogue {
+    dialogue: DialoguePair[];
+}
 
 const app = express();
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
 // Middleware
 app.use(express.json());
+
+//this is temporary until we set up proper routing
 app.use(express.static(path.join(process.cwd(), 'public')));
 
 // Simple health check
@@ -19,29 +31,70 @@ app.get('/', (_req: Request, res: Response) => {
     res.send('Hello from Express + TypeScript');
 });
 
-const Script = [
-    { speaker: "???", text: "man, that guy just killed my entire team... well time to restart..." },
-    { speaker: "You", text: "yo, who r u??" },
-    { speaker: "???", text: "yo, im just the manager for this team. im just struggling because of these enemies :(" },
-    { speaker: "You", text: "yeah i can tell, but like whats ur name and stuff" },
-    { speaker: "D.Y.L.A.N", text: "oh right mb, im D.Y.L.A.N" },
-    { speaker: "You", text: "oh so ur a clanker?" },
-    { speaker: "D.Y.L.A.N", text: "yeah, i just wanna get through these enemies and secure this sector, u mind being the manager now??" },
-    { speaker: "You", text: "aight bet" },
-    { speaker: "D.Y.L.A.N", text: "dude ur such a life saver, ur literally a gift from..." },
-    { speaker: "You", text: "from what...? god?" },
-    { speaker: "D.Y.L.A.N", text: "yeah, from our lord and savior hatsune miku.." },
-    { speaker: "You", text: "what." },
-    { speaker: "D.Y.L.A.N", text: "anyways lets get going, these enemies wont take themselves out!" },
-    { speaker: "You", text: "dude i dont even know how to play this game..." },
-    { speaker: "D.Y.L.A.N", text: "oh right im the tutorial guy i completely forgot" },
-    { speaker: "D.Y.L.A.N", text: "basically just drag and drop. you will see an arrow from your character to the enemy you want to attack." },
-    { speaker: "D.Y.L.A.N", text: "if the character you selected is a healer, then instead of an enemy, you must select a teammate to heal." },
-    { speaker: "D.Y.L.A.N", text: "there is no need to use all of your characters, but be mindful! they can still be attacked by enemies." },
-    { speaker: "D.Y.L.A.N", text: "when you are done selecting, just press the big giant button you see." },
-    { speaker: "You", text: "aight i think i can deal with that" },
-];
+app.get('/api/getDialogue', (req: Request, res: Response) => {
+    // 1. Get and validate query parameters
+    const chapterNum = Number(req.query.ch);
+    const index1 = Number(req.query.i1); // Dialogue set index (e.g., 0, 1, 2...)
+    // Convert 'null' string or undefined to null, otherwise convert to number
+    const index2 = req.query.i2 !== 'null' && req.query.i2 !== undefined ? Number(req.query.i2) : null; 
 
+    if (isNaN(chapterNum) || isNaN(index1)) {
+        return res.status(400).json({ error: 'Invalid chapter number (ch) or dialogue set index (i1).' });
+    }
+
+    // --- File Loading Section ---
+    let chapterData: ChapterDialogue;
+    try {
+        // Construct the absolute path to the JSON file. 
+        // Assumes your Express server root is the base for /static.
+        const filePath = path.join(__dirname, 'static', 'story', `ch${chapterNum}.json`);
+        
+        // Load the JSON file synchronously
+        chapterData = require(filePath); 
+
+    } catch (e: any) {
+        // Handle file not found (likely chapter not existing) or JSON parsing errors
+        if (e.code === 'MODULE_NOT_FOUND') {
+            return res.status(404).json({ error: `Chapter file ch${chapterNum}.json not found in /static/story/.` });
+        }
+        console.error('Error loading or parsing chapter file:', e);
+        return res.status(500).json({ error: 'Failed to load chapter data due to an internal server error.' });
+    }
+    // --- End File Loading Section ---
+
+    const chapterDialogues = chapterData.dialogue;
+
+    // 2. Navigate to the dialogue set using index1
+    const dialogueSet = chapterDialogues[index1];
+    if (!dialogueSet) {
+        return res.status(404).json({ error: `Dialogue set index i1=${index1} not found in chapter ${chapterNum}.` });
+    }
+
+    let requestedDialogue: DialogueLine[] | undefined;
+
+    // 3. Determine the specific dialogue array using index2
+    if (index2 === 0 || index2 === null) {
+        // i2=0 (Pre-Combat) or i2=null (Defaulting to Pre-Combat)
+        requestedDialogue = dialogueSet[0];
+    } else if (index2 === 1) {
+        // i2=1 (Post-Combat)
+        if (dialogueSet.length > 1) {
+            requestedDialogue = dialogueSet[1];
+        } else {
+            return res.status(404).json({ error: `Post-combat dialogue (i2=1) not found for dialogue set i1=${index1}.` });
+        }
+    } else {
+        return res.status(400).json({ error: 'Index i2 must be 0 (pre-combat), 1 (post-combat), or null.' });
+    }
+
+    // 4. Send the result
+    if (requestedDialogue) {
+        return res.json({ dialogue: requestedDialogue });
+    } else {
+        // Should not be reached, but included for robustness
+        return res.status(500).json({ error: 'An unexpected error occurred while processing dialogue data.' });
+    }
+});
 
 // 404 handler
 app.use((req: Request, res: Response) => {
