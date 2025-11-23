@@ -12,7 +12,14 @@
             background-color: #0f172a; 
             min-height: 100vh; 
             overflow-x: hidden; /* Prevent horizontal scroll */
-            user-select: none; 
+            user-select: none;
+            touch-action: pan-y; /* Allow vertical scrolling but prevent horizontal gestures */
+        }
+        
+        /* Prevent scrolling when dragging on mobile */
+        body.dragging {
+            overflow: hidden;
+            touch-action: none;
         }
         
         /* Card Styles */
@@ -671,8 +678,17 @@ function showGameOver(title, msg, colorClass) {
 }
 
 // ==========================================
-// 7. DRAG & DROP
+// 7. DRAG & DROP (Desktop & Mobile)
 // ==========================================
+
+// Track touch drag state
+let touchDragState = {
+    srcId: null,
+    isDragging: false,
+    lastTarget: null
+};
+
+// Desktop: Mouse dragover
 document.addEventListener('dragover', e => { 
     e.preventDefault(); 
     if (GameState.phase === 'PLANNING') {
@@ -680,6 +696,7 @@ document.addEventListener('dragover', e => {
     }
 });
 
+// Desktop: Drag start
 function handleDragStart(e) {
     if (GameState.phase !== 'PLANNING') { e.preventDefault(); return; }
     const id = e.target.closest('.unit-card').id;
@@ -689,6 +706,7 @@ function handleDragStart(e) {
     GameState.dragStart = getCenter(id);
 }
 
+// Desktop: Drop
 function handleDrop(e) {
     e.preventDefault();
     if (GameState.phase !== 'PLANNING') return;
@@ -716,6 +734,119 @@ function handleDrop(e) {
 }
 
 // ==========================================
+// MOBILE: TOUCH EVENTS
+// ==========================================
+
+// Helper function to validate if a drag action is valid
+function isValidDragTarget(srcId, tgtId) {
+    const src = GameState.units[srcId];
+    const tgt = GameState.units[tgtId];
+    
+    if (!src || !tgt) return false;
+    
+    // PC attacking EN
+    if (tgt.type === 'EN' && src.ability.damage > 0) return true;
+    // PC healing PC
+    if (tgt.type === 'PC' && src.ability.heal > 0) return true;
+    
+    return false;
+}
+
+// Helper function to reset drag state
+function resetDragState() {
+    document.body.classList.remove('dragging');
+    GameState.dragStart = null;
+    GameState.dragCurrent = null;
+    touchDragState.srcId = null;
+    touchDragState.isDragging = false;
+    if (touchDragState.lastTarget) {
+        touchDragState.lastTarget.classList.remove('target-hover');
+        touchDragState.lastTarget = null;
+    }
+    document.querySelectorAll('.target-hover').forEach(el => el.classList.remove('target-hover'));
+}
+
+function handleTouchStart(e) {
+    if (GameState.phase !== 'PLANNING') return;
+    
+    const card = e.target.closest('.unit-card');
+    if (!card) return;
+    
+    const id = card.id;
+    const unit = GameState.units[id];
+    
+    // Only allow dragging from PC units with HP > 0
+    if (!id.startsWith('PC_') || unit.hp <= 0) return;
+    
+    // Prevent scrolling while dragging
+    e.preventDefault();
+    document.body.classList.add('dragging');
+    
+    touchDragState.srcId = id;
+    touchDragState.isDragging = true;
+    
+    const touch = e.touches[0];
+    GameState.dragStart = getCenter(id);
+    GameState.dragCurrent = { x: touch.clientX, y: touch.clientY };
+}
+
+function handleTouchMove(e) {
+    if (!touchDragState.isDragging || GameState.phase !== 'PLANNING') return;
+    
+    e.preventDefault(); // Prevent scrolling
+    
+    const touch = e.touches[0];
+    GameState.dragCurrent = { x: touch.clientX, y: touch.clientY };
+    
+    // Find element under touch point
+    const elementAtPoint = document.elementFromPoint(touch.clientX, touch.clientY);
+    const targetCard = elementAtPoint?.closest('.unit-card');
+    
+    // Remove hover from previous target
+    if (touchDragState.lastTarget && touchDragState.lastTarget !== targetCard) {
+        touchDragState.lastTarget.classList.remove('target-hover');
+        touchDragState.lastTarget = null;
+    }
+    
+    // Add hover to current target if valid
+    if (targetCard && targetCard.id !== touchDragState.srcId) {
+        if (isValidDragTarget(touchDragState.srcId, targetCard.id)) {
+            targetCard.classList.add('target-hover');
+            touchDragState.lastTarget = targetCard;
+        }
+    }
+}
+
+function handleTouchEnd(e) {
+    if (!touchDragState.isDragging || GameState.phase !== 'PLANNING') return;
+    
+    // Only prevent default if the event is cancelable to avoid warning
+    if (e.cancelable) e.preventDefault();
+    
+    const touch = e.changedTouches[0];
+    const elementAtPoint = document.elementFromPoint(touch.clientX, touch.clientY);
+    const tgtCard = elementAtPoint?.closest('.unit-card');
+    
+    if (tgtCard && touchDragState.srcId) {
+        const srcId = touchDragState.srcId;
+        const tgtId = tgtCard.id;
+        
+        if (isValidDragTarget(srcId, tgtId)) {
+            GameState.pendingActions[srcId] = tgtId;
+            document.getElementById(srcId).classList.add('assigned');
+        }
+    }
+    
+    // Reset state
+    resetDragState();
+}
+
+// Cancel drag if touch is cancelled
+function handleTouchCancel(e) {
+    resetDragState();
+}
+
+// ==========================================
 // 8. INIT
 // ==========================================
 function updateUI(id) {
@@ -732,10 +863,18 @@ function createCard(u, id) {
     const div = document.createElement('div');
     div.id = id;
     div.className = `unit-card h-32 sm:h-36 w-full rounded-xl border-b-4 shadow-lg flex flex-col p-2 sm:p-3 ${isPC ? 'border-blue-500 draggable' : 'border-red-500'}`;
+    
+    // Desktop drag and drop
     if (isPC) { div.draggable = true; div.ondragstart = handleDragStart; }
     div.ondrop = handleDrop;
     div.ondragover = e => { e.preventDefault(); if(GameState.phase === 'PLANNING') div.classList.add('target-hover'); };
     div.ondragleave = e => div.classList.remove('target-hover');
+    
+    // Mobile touch events (for all cards - can be source or target)
+    div.addEventListener('touchstart', handleTouchStart, { passive: false });
+    div.addEventListener('touchmove', handleTouchMove, { passive: false });
+    div.addEventListener('touchend', handleTouchEnd, { passive: false });
+    div.addEventListener('touchcancel', handleTouchCancel, { passive: false });
 
     // Badge Logic
     let badge = "";
