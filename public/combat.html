@@ -737,6 +737,35 @@ function handleDrop(e) {
 // MOBILE: TOUCH EVENTS
 // ==========================================
 
+// Helper function to validate if a drag action is valid
+function isValidDragTarget(srcId, tgtId) {
+    const src = GameState.units[srcId];
+    const tgt = GameState.units[tgtId];
+    
+    if (!src || !tgt) return false;
+    
+    // PC attacking EN
+    if (tgt.type === 'EN' && src.ability.damage > 0) return true;
+    // PC healing PC
+    if (tgt.type === 'PC' && src.ability.heal > 0) return true;
+    
+    return false;
+}
+
+// Helper function to reset drag state
+function resetDragState() {
+    document.body.classList.remove('dragging');
+    GameState.dragStart = null;
+    GameState.dragCurrent = null;
+    touchDragState.srcId = null;
+    touchDragState.isDragging = false;
+    if (touchDragState.lastTarget) {
+        touchDragState.lastTarget.classList.remove('target-hover');
+        touchDragState.lastTarget = null;
+    }
+    document.querySelectorAll('.target-hover').forEach(el => el.classList.remove('target-hover'));
+}
+
 function handleTouchStart(e) {
     if (GameState.phase !== 'PLANNING') return;
     
@@ -776,18 +805,12 @@ function handleTouchMove(e) {
     // Remove hover from previous target
     if (touchDragState.lastTarget && touchDragState.lastTarget !== targetCard) {
         touchDragState.lastTarget.classList.remove('target-hover');
+        touchDragState.lastTarget = null;
     }
     
     // Add hover to current target if valid
     if (targetCard && targetCard.id !== touchDragState.srcId) {
-        const src = GameState.units[touchDragState.srcId];
-        const tgt = GameState.units[targetCard.id];
-        
-        let valid = false;
-        if (tgt.type === 'EN' && src.ability.damage > 0) valid = true;
-        if (tgt.type === 'PC' && src.ability.heal > 0) valid = true;
-        
-        if (valid) {
+        if (isValidDragTarget(touchDragState.srcId, targetCard.id)) {
             targetCard.classList.add('target-hover');
             touchDragState.lastTarget = targetCard;
         }
@@ -798,7 +821,6 @@ function handleTouchEnd(e) {
     if (!touchDragState.isDragging || GameState.phase !== 'PLANNING') return;
     
     e.preventDefault();
-    document.body.classList.remove('dragging');
     
     const touch = e.changedTouches[0];
     const elementAtPoint = document.elementFromPoint(touch.clientX, touch.clientY);
@@ -807,39 +829,20 @@ function handleTouchEnd(e) {
     if (tgtCard && touchDragState.srcId) {
         const srcId = touchDragState.srcId;
         const tgtId = tgtCard.id;
-        const src = GameState.units[srcId];
-        const tgt = GameState.units[tgtId];
         
-        let valid = false;
-        // PC attacking EN
-        if (tgt.type === 'EN' && src.ability.damage > 0) valid = true;
-        // PC healing PC
-        if (tgt.type === 'PC' && src.ability.heal > 0) valid = true;
-        
-        if (valid) {
+        if (isValidDragTarget(srcId, tgtId)) {
             GameState.pendingActions[srcId] = tgtId;
             document.getElementById(srcId).classList.add('assigned');
         }
     }
     
     // Reset state
-    GameState.dragStart = null;
-    GameState.dragCurrent = null;
-    touchDragState.srcId = null;
-    touchDragState.isDragging = false;
-    touchDragState.lastTarget = null;
-    document.querySelectorAll('.target-hover').forEach(el => el.classList.remove('target-hover'));
+    resetDragState();
 }
 
 // Cancel drag if touch is cancelled
 function handleTouchCancel(e) {
-    document.body.classList.remove('dragging');
-    GameState.dragStart = null;
-    GameState.dragCurrent = null;
-    touchDragState.srcId = null;
-    touchDragState.isDragging = false;
-    touchDragState.lastTarget = null;
-    document.querySelectorAll('.target-hover').forEach(el => el.classList.remove('target-hover'));
+    resetDragState();
 }
 
 // ==========================================
