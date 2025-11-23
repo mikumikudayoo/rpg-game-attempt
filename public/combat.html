@@ -1,9 +1,783 @@
-<html>
-    <head>
-        <title>Combat</title>
-    </head>
-    <body>
-        <h1>combat encounter!</h1>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mindustry RPG - Adaptive Combat</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;900&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: #0f172a; 
+            min-height: 100vh; 
+            overflow-x: hidden; /* Prevent horizontal scroll */
+            user-select: none; 
+        }
         
-    </body>
+        /* Card Styles */
+        .unit-card { 
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative; z-index: 10; background-color: #1e293b; 
+        }
+        .unit-card:hover { transform: translateY(-4px); z-index: 20; }
+        .unit-card.assigned { border-color: #fbbf24 !important; box-shadow: 0 0 15px rgba(251, 191, 36, 0.3); }
+        .unit-card.draggable { cursor: grab; }
+        .unit-card.draggable:active { cursor: grabbing; }
+        .target-hover { transform: scale(1.05); box-shadow: 0 0 20px #f97316; border-color: #f97316 !important; }
+
+        /* Status Effects */
+        .winner { box-shadow: 0 0 30px #4ade80; border-color: #4ade80 !important; transform: scale(1.1); z-index: 30; }
+        .loser { opacity: 0.6; transform: scale(0.95); filter: grayscale(0.5); }
+        .acting { border-color: white !important; box-shadow: 0 0 20px white; z-index: 30; }
+
+        /* Canvas & UI */
+        #arrow-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 50; pointer-events: none; }
+        #combat-log { scrollbar-width: thin; scrollbar-color: #475569 #1e293b; }
+        
+        /* Floating Text Animation */
+        @keyframes floatUp { 
+            0% { transform: translateY(0) scale(0.5); opacity: 0; } 
+            20% { transform: translateY(-10px) scale(1.2); opacity: 1; } 
+            100% { transform: translateY(-50px) scale(1); opacity: 0; } 
+        }
+        .float-text { 
+            position: absolute; 
+            animation: floatUp 1.2s forwards; 
+            pointer-events: none; 
+            z-index: 100; /* Highest priority */
+            font-weight: 900; 
+            text-shadow: 0 2px 4px rgba(0,0,0,0.9); 
+            font-size: 1.5rem;
+        }
+
+        /* Modal */
+        #game-over-modal { backdrop-filter: blur(5px); }
+
+        /* Dialogue Box */
+        #dialogue-box {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 200px; /* Slightly reduced height for mobile */
+            background: rgba(15, 23, 42, 0.95); /* slate-900/95 */
+            border-top: 5px solid #083344; /* sky-900 */
+            padding: 20px 24px;
+            box-shadow: 0 -10px 40px rgba(0,0,0,0.5);
+            z-index: 150;
+            cursor: pointer;
+            transition: opacity 0.3s ease;
+        }
+        @media (min-width: 768px) {
+            #dialogue-box { height: 250px; padding: 24px 32px; } /* Desktop height */
+        }
+        #dialogue-speaker {
+            color: #fbbf24; /* amber-400 */
+            font-weight: 900;
+            text-shadow: 1px 1px #0f172a;
+        }
+        #dialogue-text {
+            color: #e2e8f0; /* slate-200 */
+            font-size: 1.1rem; /* Smaller text on mobile */
+            line-height: 1.5;
+            min-height: 60px; 
+        }
+        @media (min-width: 768px) {
+             #dialogue-text { font-size: 1.3rem; } /* Larger text on desktop */
+        }
+        @keyframes blink { 50% { opacity: 0; } }
+        .blinking-arrow { animation: blink 1s step-start infinite; }
+    </style>
+</head>
+<body>
+
+<canvas id="arrow-canvas"></canvas>
+
+<!-- Game Over Modal -->
+<div id="game-over-modal" class="fixed inset-0 z-[200] hidden bg-black/80 flex items-center justify-center">
+    <div class="bg-slate-800 p-6 sm:p-8 rounded-2xl border-4 border-slate-600 text-center shadow-2xl max-w-sm w-full transform transition-all scale-100">
+        <h2 id="modal-title" class="text-3xl sm:text-4xl font-black mb-2 text-white uppercase tracking-tighter">VICTORY</h2>
+        <p id="modal-msg" class="text-slate-400 mb-6 text-sm sm:text-base">All enemies destroyed.</p>
+        <button onclick="location.reload()" class="w-full py-3 sm:py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-lg sm:text-xl uppercase tracking-widest shadow-lg hover:shadow-blue-500/50 transition-all">
+            Restart Battle
+        </button>
+    </div>
+</div>
+
+<!-- Dialogue Box Overlay -->
+<div id="dialogue-box" class="flex flex-col justify-start" onclick="nextDialogue()">
+    <div class="text-xl sm:text-2xl mb-1 sm:mb-2 flex items-center">
+        <span id="dialogue-speaker" class="mr-3">SPEAKER</span>
+        <span class="text-[10px] sm:text-xs text-slate-500 uppercase tracking-widest">-- Click to Advance --</span>
+    </div>
+    <div id="dialogue-text" class="text-slate-200">
+        This is where the dialogue will appear.
+    </div>
+    <div class="flex justify-end mt-auto text-3xl sm:text-4xl text-amber-400 pr-4 blinking-arrow">
+        ▼
+    </div>
+</div>
+
+<div id="app" class="h-screen flex flex-col relative z-0">
+    <header class="bg-slate-900/80 p-3 text-center border-b border-slate-700 backdrop-blur-sm flex justify-between items-center px-4 sm:px-8 z-10 relative">
+        <div>
+            <h1 class="text-base sm:text-xl font-extrabold text-slate-100 tracking-tight">MINDUSTRY <span class="text-amber-500">RPG</span></h1>
+            <p class="text-[8px] sm:text-xs text-slate-400 font-mono">Vs Rolling = Duel (Roll) | Vs Ignore = Trade (Guaranteed)</p>
+        </div>
+        <div class="text-right">
+            <div id="turn-indicator" class="text-lg sm:text-2xl font-bold text-blue-400">PLANNING PHASE</div>
+            <div class="text-xs text-slate-500">Turn <span id="turn-counter">1</span></div>
+        </div>
+    </header>
+
+    <div class="flex-1 flex flex-col relative">
+        <!-- Enemy Zone -->
+        <div class="flex-1 flex items-center justify-center p-2 sm:p-4 bg-slate-900/20">
+            <!-- Responsive Grid Change: 2 columns on small, 3 on medium, 5 on large -->
+            <div id="enemy-container" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 sm:gap-4 w-full max-w-6xl"></div>
+        </div>
+
+        <!-- Controls (Log and Button) -->
+        <!-- Stacked on mobile, side-by-side on desktop -->
+        <div class="h-64 flex flex-col md:h-40 md:flex-row gap-2 sm:gap-4 px-4 sm:px-8 py-2 bg-slate-900/90 border-y border-slate-700 relative z-40 shadow-2xl">
+            <div id="combat-log" class="flex-1 min-h-[100px] md:min-h-0 bg-slate-950 rounded-lg border border-slate-700 p-3 overflow-y-auto text-xs font-mono space-y-1 opacity-90 shadow-inner">
+                <div class="text-amber-400">>> Combat Logic Loaded. Assign targets.</div>
+            </div>
+            <!-- Button takes full width on mobile, fixed width on desktop -->
+            <div class="w-full md:w-48 flex flex-col justify-center">
+                <button id="btn-turn" onclick="resolveCombat()" class="py-3 md:h-full w-full bg-amber-600 hover:bg-amber-500 text-white font-black text-base sm:text-lg uppercase tracking-widest rounded-lg shadow-lg border-b-4 border-amber-800 active:border-b-0 active:translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    Initiate<br class="hidden md:block">Combat
+                </button>
+            </div>
+        </div>
+
+        <!-- Player Zone -->
+        <div class="flex-1 flex items-center justify-center p-2 sm:p-4 bg-slate-800/30">
+            <!-- Responsive Grid Change: 2 columns on small, 3 on medium, 5 on large -->
+            <div id="player-container" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 sm:gap-4 w-full max-w-6xl"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ==========================================
+// 1. DATA
+// ==========================================
+const UnitData = {
+    PCs: {
+        "Alpha": 	{ maxHp: 70, role: "Tank", 	ability: { damage: 4, 	heal: 0, rolls: 4, type: "Adaptive", effect: "Sustain Protocol" } },
+        "Zenith": { maxHp: 45, role: "DPS", 	ability: { damage: 10, heal: 0, rolls: 6, type: "Adaptive", effect: "Focused Fire" } },
+        "Poly": 	{ maxHp: 50, role: "AoE", 	ability: { damage: 6, 	heal: 0, rolls: 4, type: "Adaptive", effect: "Chain Strike" } },
+        "Merui": 	{ maxHp: 60, role: "Healer",ability: { damage: 0, 	heal: 5, rolls: 0, type: "Adaptive", effect: "Reconstruct" } },
+        "Locus": 	{ maxHp: 40, role: "DPS", 	ability: { damage: 7, 	heal: 0, rolls: 5, type: "Adaptive", effect: "Quick Attack" } }
+    },
+    ENs: {
+        "Dagger": { maxHp: 15, name: "Dagger", ability: { damage: 5, 	rolls: 3, type: "Rolling" }, passives: {} },
+        "Flare": 	{ maxHp: 12, name: "Flare", 	ability: { damage: 3, 	rolls: 0, type: "Ignore" }, 	passives: {} },
+        "Mace": 	{ maxHp: 40, name: "Mace", 	ability: { damage: 8, 	rolls: 4, type: "Rolling" }, passives: { thorns: 2 } },
+        "Crawler":{ maxHp: 20, name: "Crawler",ability: { damage: 10, rolls: 2, type: "Rolling" }, passives: {} }
+    }
+};
+
+let GameState = {
+    units: {},
+    pendingActions: {}, 
+    phase: 'DIALOGUE', // Start in DIALOGUE phase
+    turn: 1,
+    dragStart: null,
+    dragCurrent: null,
+    visualActions: [],
+    actedEnemies: new Set(),
+    
+    // Dialogue State
+    currentScript: [],
+    scriptIndex: 0,
+    isTyping: false
+};
+
+const Script = [
+    { speaker: "???", text: "man, that guy just killed my entire team... well time to restart..." },
+    { speaker: "You", text: "yo, who r u??" },
+    { speaker: "???", text: "yo, im just the manager for this team. im just struggling because of these enemies :(" },
+    { speaker: "You", text: "yeah i can tell, but like whats ur name and stuff" },
+    { speaker: "D.Y.L.A.N", text: "oh right mb, im D.Y.L.A.N" },
+    { speaker: "You", text: "oh so ur a clanker?" },
+    { speaker: "D.Y.L.A.N", text: "yeah, i just wanna get through these enemies and secure this sector, u mind being the manager now??" },
+    { speaker: "You", text: "aight bet" },
+    { speaker: "D.Y.L.A.N", text: "dude ur such a life saver, ur literally a gift from..." },
+    { speaker: "You", text: "from what...? god?" },
+    { speaker: "D.Y.L.A.N", text: "yeah, from our lord and savior hatsune miku.." },
+    { speaker: "You", text: "what." },
+    { speaker: "D.Y.L.A.N", text: "anyways lets get going, these enemies wont take themselves out!" },
+    { speaker: "You", text: "dude i dont even know how to play this game..." },
+    { speaker: "D.Y.L.A.N", text: "oh right im the tutorial guy i completely forgot" },
+    { speaker: "D.Y.L.A.N", text: "basically just drag and drop. you will see an arrow from your character to the enemy you want to attack." },
+    { speaker: "D.Y.L.A.N", text: "if the character you selected is a healer, then instead of an enemy, you must select a teammate to heal." },
+    { speaker: "D.Y.L.A.N", text: "there is no need to use all of your characters, but be mindful! they can still be attacked by enemies." },
+    { speaker: "D.Y.L.A.N", text: "when you are done selecting, just press the big giant button you see." },
+    { speaker: "You", text: "aight i think i can deal with that" },
+];
+
+
+// ==========================================
+// 2. DIALOGUE ENGINE
+// ==========================================
+const dialogueBox = document.getElementById('dialogue-box');
+const speakerEl = document.getElementById('dialogue-speaker');
+const textEl = document.getElementById('dialogue-text');
+const btnTurn = document.getElementById('btn-turn');
+
+let typingTimerId = null; // Variable to hold the setTimeout ID for skipping
+
+function startDialogue(script) {
+    GameState.currentScript = script;
+    GameState.scriptIndex = 0;
+    dialogueBox.style.opacity = 1;
+    dialogueBox.classList.remove('hidden');
+    nextDialogue();
+}
+
+function displayLine(line) {
+    GameState.isTyping = true;
+    speakerEl.innerText = line.speaker;
+    speakerEl.className = `mr-3 text-xl sm:text-2xl mb-1 sm:mb-2 ${line.color || 'text-amber-400'}`;
+    textEl.innerHTML = ""; // Use innerHTML for dynamic content
+    
+    const textContent = line.text;
+    let i = 0;
+    
+    const type = () => {
+        if (i < textContent.length) {
+            const char = textContent.charAt(i);
+            // Use innerHTML and &nbsp; to guarantee space visibility during typing animation
+            if (char === ' ') {
+                textEl.innerHTML += '&nbsp;';
+            } else {
+                textEl.innerHTML += char;
+            }
+            i++;
+            // Store the timer ID for clearing
+            typingTimerId = setTimeout(type, 15); 
+        } else {
+            GameState.isTyping = false;
+            typingTimerId = null;
+        }
+    };
+    type();
+}
+
+window.nextDialogue = function() {
+    if (GameState.isTyping) {
+        // Fix: If currently typing, clear the timer and display full text
+        if (typingTimerId !== null) {
+            clearTimeout(typingTimerId);
+            typingTimerId = null;
+        }
+        
+        // GameState.scriptIndex - 1 points to the current line being displayed
+        const line = GameState.currentScript[GameState.scriptIndex - 1]; 
+        
+        // Display the full text instantly, ensuring spaces are preserved
+        textEl.innerHTML = line.text.replace(/ /g, '&nbsp;');
+        GameState.isTyping = false;
+        return;
+    }
+
+    if (GameState.scriptIndex < GameState.currentScript.length) {
+        const line = GameState.currentScript[GameState.scriptIndex];
+        displayLine(line);
+        GameState.scriptIndex++;
+    } else {
+        // Dialogue finished
+        dialogueBox.style.opacity = 0;
+        setTimeout(() => dialogueBox.classList.add('hidden'), 300);
+        GameState.phase = 'PLANNING';
+        btnTurn.disabled = false;
+        log("Ready for action. Assign targets.", 'sys');
+    }
+}
+
+// ==========================================
+// 3. VISUAL ENGINE
+// ==========================================
+const canvas = document.getElementById('arrow-canvas');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+function getCenter(id) {
+    const el = document.getElementById(id);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width/2, y: r.top + r.height/2 };
+}
+
+function drawArrow(x1, y1, x2, y2, color, dashed = false) {
+    const head = 12;
+    const angle = Math.atan2(y2 - y1, x2 - x1);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 4;
+    if (dashed) ctx.setLineDash([10, 10]);
+    else ctx.setLineDash([]);
+    ctx.stroke();
+    
+    // Arrowhead
+    ctx.beginPath();
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - head * Math.cos(angle - Math.PI/6), y2 - head * Math.sin(angle - Math.PI/6));
+    ctx.lineTo(x2 - head * Math.cos(angle + Math.PI/6), y2 - head * Math.sin(angle + Math.PI/6));
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.setLineDash([]); 
+}
+
+function spawnFloatText(id, text, color) {
+    const center = getCenter(id);
+    if(!center) return;
+    const el = document.createElement('div');
+    el.className = `float-text ${color}`;
+    el.innerText = text;
+    el.style.left = `${center.x}px`;
+    el.style.top = `${center.y - 40}px`;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 1500);
+}
+
+function animate() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // 1. Planning Lines (Amber Dashed)
+    if (GameState.phase === 'PLANNING') {
+        Object.entries(GameState.pendingActions).forEach(([src, tgt]) => {
+            const s = getCenter(src);
+            const t = getCenter(tgt);
+            if (s && t) drawArrow(s.x, s.y, t.x, t.y, '#fbbf24', true);
+        });
+    }
+
+    // 2. Dragging Line (White Dashed)
+    if (GameState.dragStart && GameState.dragCurrent) {
+        drawArrow(GameState.dragStart.x, GameState.dragStart.y, GameState.dragCurrent.x, GameState.dragCurrent.y, '#ffffff', true);
+    }
+
+    // 3. Combat Animations (Solid Colors)
+    GameState.visualActions.forEach(a => {
+        const s = getCenter(a.src);
+        const t = getCenter(a.tgt);
+        if (s && t) drawArrow(s.x, s.y, t.x, t.y, a.color, false);
+    });
+
+    requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+
+// ==========================================
+// 4. COMBAT LOGIC
+// ==========================================
+
+function log(msg, type='def') {
+    const el = document.getElementById('combat-log');
+    const div = document.createElement('div');
+    const colors = { 
+        def: 'text-slate-400', 
+        dmg: 'text-red-400 font-bold', 
+        heal: 'text-emerald-400 font-bold', 
+        sys: 'text-amber-400', 
+        duel: 'text-cyan-400 font-bold',
+        tie: 'text-orange-400',
+        tank: 'text-blue-400' // New color for Tank ability
+    };
+    div.className = colors[type] || colors.def;
+    div.innerText = `> ${msg}`;
+    el.appendChild(div);
+    el.scrollTop = el.scrollHeight;
+}
+
+function applyDamage(id, amt) {
+    const u = GameState.units[id];
+    if (!u || u.hp <= 0) return;
+    u.hp = Math.max(0, u.hp - amt);
+    updateUI(id);
+}
+
+function applyHeal(id, amt) {
+    const u = GameState.units[id];
+    if (!u || u.hp <= 0) return;
+    u.hp = Math.min(u.maxHp, u.hp + amt);
+    spawnFloatText(id, `+${amt}`, 'text-emerald-400');
+    updateUI(id);
+}
+
+// Special Ability Logic
+function handleChain(srcId, tgtId) {
+    const others = Object.keys(GameState.units).filter(k => k.startsWith('EN') && k !== tgtId && GameState.units[k].hp > 0);
+    if (others.length > 0) {
+        const jumpId = others[Math.floor(Math.random() * others.length)];
+        const dmg = 6;
+        applyDamage(jumpId, dmg);
+        spawnFloatText(jumpId, `-${dmg} (Chain)`, 'text-purple-400');
+        log(`${GameState.units[srcId].name} Chain Strike jumped to ${GameState.units[jumpId].name}.`, 'sys');
+        checkDeaths();
+    }
+}
+
+function handleSustainProtocol(srcId) {
+    const healAmt = 5;
+    applyHeal(srcId, healAmt);
+    log(`${GameState.units[srcId].name} activates Sustain Protocol, restoring ${healAmt} HP.`, 'tank');
+}
+
+// ==========================================
+// 5. EXECUTION PHASE
+// ==========================================
+
+async function resolveCombat() {
+    const actions = Object.entries(GameState.pendingActions);
+    if (actions.length === 0) { log("No orders assigned! Press Initiate Combat when ready.", 'sys'); return; }
+
+    const btn = document.getElementById('btn-turn');
+    GameState.phase = 'EXECUTING';
+    GameState.actedEnemies.clear();
+    btn.disabled = true;
+    btn.innerText = "FIGHTING...";
+    document.getElementById('turn-indicator').innerText = "COMBAT PHASE";
+    document.getElementById('turn-indicator').className = "text-lg sm:text-2xl font-bold text-red-500 animate-pulse";
+
+    // --- PLAYER INITIATED ACTIONS ---
+    for (const [srcId, tgtId] of actions) {
+        const src = GameState.units[srcId];
+        const tgt = GameState.units[tgtId];
+        if (!src || src.hp <= 0) continue;
+
+        if (tgt.type === 'EN') GameState.actedEnemies.add(tgtId);
+
+        // Highlight
+        const srcEl = document.getElementById(srcId);
+        const tgtEl = document.getElementById(tgtId);
+        srcEl.classList.add('acting');
+        if (tgtEl) tgtEl.classList.add('acting');
+
+        // 1. HEALING
+        if (src.ability.heal > 0 && tgt.type === 'PC') {
+            const vis = { src: srcId, tgt: tgtId, color: '#10b981' };
+            GameState.visualActions.push(vis);
+            await wait(600);
+            applyHeal(tgtId, src.ability.heal);
+            log(`${src.name} repairs ${tgt.name} for ${src.ability.heal} HP.`, 'heal');
+            GameState.visualActions = GameState.visualActions.filter(v => v !== vis);
+        }
+        // 2. COMBAT (PC vs EN)
+        else if (tgt.type === 'EN') {
+            await resolveDuel(srcId, tgtId);
+        }
+        
+        srcEl.classList.remove('acting');
+        if (tgtEl) tgtEl.classList.remove('acting');
+        checkDeaths();
+        await wait(400);
+        if(checkWinLoss()) return;
+    }
+
+    // --- ENEMY PHASE (Unengaged Units) ---
+    await resolveUnengagedEnemies();
+
+    // --- TURN END ---
+    if(checkWinLoss()) return;
+    
+    GameState.phase = 'PLANNING';
+    GameState.turn++;
+    GameState.pendingActions = {};
+    // Remove 'assigned' class from all units
+    document.querySelectorAll('.unit-card.assigned').forEach(el => el.classList.remove('assigned'));
+    
+    document.getElementById('turn-counter').innerText = GameState.turn;
+    document.getElementById('turn-indicator').innerText = "PLANNING PHASE";
+    document.getElementById('turn-indicator').className = "text-lg sm:text-2xl font-bold text-blue-400";
+    btn.disabled = false;
+    btn.innerText = "INITIATE COMBAT";
+    
+    // Reset Visuals
+    document.querySelectorAll('.winner, .loser').forEach(el => el.classList.remove('winner', 'loser'));
+}
+
+async function resolveDuel(srcId, tgtId) {
+    const src = GameState.units[srcId];
+    const tgt = GameState.units[tgtId];
+    
+    // Visual Setup
+    const vis = { src: srcId, tgt: tgtId, color: '#ffffff' };
+    GameState.visualActions.push(vis);
+    
+    const isRollingEnemy = (tgt.ability.type === 'Rolling');
+    let pcHit = false;
+    
+    if (isRollingEnemy) {
+        // --- ROLLING DUEL ---
+        vis.color = '#38bdf8'; // Cyan
+        
+        // Use modified rolls
+        const pcRoll = Math.floor(Math.random() * (src.ability.rolls + 1));
+        const enRoll = Math.floor(Math.random() * (tgt.ability.rolls + 1));
+        
+        spawnFloatText(srcId, `🎲 ${pcRoll}`, 'text-cyan-300');
+        spawnFloatText(tgtId, `🎲 ${enRoll}`, 'text-red-300');
+        await wait(1000);
+
+        if (pcRoll > enRoll) {
+            // PC WINS
+            pcHit = true;
+            log(`Duel: ${src.name} (${pcRoll}) > ${tgt.name} (${enRoll}).`, 'duel');
+            document.getElementById(srcId).classList.add('winner');
+            document.getElementById(tgtId).classList.add('loser');
+            
+            const dmg = src.ability.damage;
+            applyDamage(tgtId, dmg);
+            spawnFloatText(tgtId, `💥 ${dmg}`, 'text-red-500');
+        } else if (pcRoll < enRoll) {
+            // ENEMY WINS (PC takes damage)
+            pcHit = false;
+            log(`Duel: ${src.name} (${pcRoll}) < ${tgt.name} (${enRoll}). Countered!`, 'dmg');
+            document.getElementById(tgtId).classList.add('winner');
+            document.getElementById(srcId).classList.add('loser');
+
+            const dmg = tgt.ability.damage;
+            applyDamage(srcId, dmg);
+            spawnFloatText(srcId, `💥 ${dmg}`, 'text-red-500');
+        } else { 
+            // TIE (Trade)
+            pcHit = true; // PC lands a hit in a tie
+            vis.color = '#f59e0b';
+            log(`Duel Tied (${pcRoll}). Both take damage.`, 'tie');
+            
+            applyDamage(tgtId, src.ability.damage);
+            spawnFloatText(tgtId, `-${src.ability.damage}`, 'text-red-500');
+            
+            applyDamage(srcId, tgt.ability.damage);
+            spawnFloatText(srcId, `-${tgt.ability.damage}`, 'text-red-500');
+
+            // Chain Logic in ties
+            if (src.ability.effect === 'Chain Strike') handleChain(srcId, tgtId);
+        }
+    } else {
+        // --- IGNORE TARGET (TRADE) ---
+        pcHit = true; // Guaranteed hit on Ignore target
+        vis.color = '#f59e0b'; // Orange
+        log(`${src.name} engages Ignore unit ${tgt.name}. Trading damage.`, 'tie');
+        
+        await wait(600);
+        
+        applyDamage(tgtId, src.ability.damage);
+        spawnFloatText(tgtId, `-${src.ability.damage}`, 'text-red-500');
+        
+        applyDamage(srcId, tgt.ability.damage);
+        spawnFloatText(srcId, `-${tgt.ability.damage}`, 'text-red-500');
+        
+        if (src.ability.effect === 'Chain Strike') handleChain(srcId, tgtId);
+    }
+    
+    // --- SUSTAIN PROTOCOL LOGIC ---
+    if (src.ability.effect === 'Sustain Protocol' && pcHit) {
+        handleSustainProtocol(srcId);
+    }
+    
+    await wait(800);
+    GameState.visualActions = GameState.visualActions.filter(v => v !== vis);
+    document.querySelectorAll('.winner, .loser').forEach(el => el.classList.remove('winner', 'loser'));
+}
+
+async function resolveUnengagedEnemies() {
+    const enemies = Object.keys(GameState.units).filter(k => k.startsWith('EN') && GameState.units[k].hp > 0);
+    const activeEnemies = enemies.filter(id => !GameState.actedEnemies.has(id));
+    
+    if (activeEnemies.length > 0) {
+        document.getElementById('turn-indicator').innerText = "ENEMY TURN";
+        log("--- Unengaged Enemies Attacking ---", 'sys');
+        
+        for (const enId of activeEnemies) {
+            const en = GameState.units[enId];
+            const targets = Object.keys(GameState.units).filter(k => k.startsWith('PC') && GameState.units[k].hp > 0);
+            if (targets.length === 0) break;
+
+            const tgtId = targets[Math.floor(Math.random() * targets.length)];
+            
+            document.getElementById(enId).classList.add('acting');
+            const vis = { src: enId, tgt: tgtId, color: '#ef4444' };
+            GameState.visualActions.push(vis);
+            await wait(800);
+
+            applyDamage(tgtId, en.ability.damage);
+            spawnFloatText(tgtId, `-${en.ability.damage}`, 'text-red-500');
+            log(`${en.name} free hit on ${GameState.units[tgtId].name}.`, 'dmg');
+            
+            GameState.visualActions = GameState.visualActions.filter(v => v !== vis);
+            document.getElementById(enId).classList.remove('acting');
+            checkDeaths();
+            await wait(400);
+            if(checkWinLoss()) return;
+        }
+    }
+}
+
+
+// ==========================================
+// 6. UTILS
+// ==========================================
+
+function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function checkDeaths() {
+    Object.keys(GameState.units).forEach(id => {
+        const u = GameState.units[id];
+        if (u.hp <= 0) {
+            const el = document.getElementById(id);
+            if (el && !el.classList.contains('opacity-50')) {
+                el.classList.add('opacity-50', 'grayscale');
+                el.draggable = false;
+                delete GameState.pendingActions[id];
+                // Remove actions targeting dead unit
+                for(const [k, v] of Object.entries(GameState.pendingActions)) {
+                    if(v === id) delete GameState.pendingActions[k];
+                }
+            }
+        }
+    });
+}
+
+function checkWinLoss() {
+    const pcs = Object.keys(GameState.units).filter(k => k.startsWith('PC') && GameState.units[k].hp > 0);
+    const ens = Object.keys(GameState.units).filter(k => k.startsWith('EN') && GameState.units[k].hp > 0);
+    
+    if (pcs.length === 0) { showGameOver("DEFEAT", "Your squad was wiped out.", "text-red-500"); return true; }
+    if (ens.length === 0) { showGameOver("VICTORY", "Sector Secured.", "text-blue-400"); return true; }
+    return false;
+}
+
+function showGameOver(title, msg, colorClass) {
+    const modal = document.getElementById('game-over-modal');
+    const titleEl = document.getElementById('modal-title');
+    const msgEl = document.getElementById('modal-msg');
+    
+    titleEl.innerText = title;
+    titleEl.className = `text-3xl sm:text-4xl font-black mb-2 uppercase tracking-tighter ${colorClass}`;
+    msgEl.innerText = msg;
+    
+    modal.classList.remove('hidden');
+}
+
+// ==========================================
+// 7. DRAG & DROP
+// ==========================================
+document.addEventListener('dragover', e => { 
+    e.preventDefault(); 
+    if (GameState.phase === 'PLANNING') {
+        GameState.dragCurrent = { x: e.clientX, y: e.clientY }; 
+    }
+});
+
+function handleDragStart(e) {
+    if (GameState.phase !== 'PLANNING') { e.preventDefault(); return; }
+    const id = e.target.closest('.unit-card').id;
+    if (GameState.units[id].hp <= 0) { e.preventDefault(); return; }
+    e.dataTransfer.setData('text/plain', id);
+    e.dataTransfer.setDragImage(new Image(), 0, 0);
+    GameState.dragStart = getCenter(id);
+}
+
+function handleDrop(e) {
+    e.preventDefault();
+    if (GameState.phase !== 'PLANNING') return;
+    const srcId = e.dataTransfer.getData('text/plain');
+    const tgtCard = e.target.closest('.unit-card');
+    
+    if (tgtCard && srcId) {
+        const tgtId = tgtCard.id;
+        const src = GameState.units[srcId];
+        const tgt = GameState.units[tgtId];
+        
+        let valid = false;
+        // PC attacking EN
+        if (tgt.type === 'EN' && src.ability.damage > 0) valid = true;
+        // PC healing PC
+        if (tgt.type === 'PC' && src.ability.heal > 0) valid = true;
+        
+        if (valid) {
+            GameState.pendingActions[srcId] = tgtId;
+            document.getElementById(srcId).classList.add('assigned');
+        }
+    }
+    GameState.dragStart = null;
+    document.querySelectorAll('.target-hover').forEach(el => el.classList.remove('target-hover'));
+}
+
+// ==========================================
+// 8. INIT
+// ==========================================
+function updateUI(id) {
+    const u = GameState.units[id];
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.querySelector('.hp-fill').style.width = `${(u.hp / u.maxHp) * 100}%`;
+    el.querySelector('.hp-text').innerText = `${u.hp}/${u.maxHp}`;
+    if(u.hp <= 0) { el.classList.add('opacity-50', 'grayscale'); el.draggable = false; }
+}
+
+function createCard(u, id) {
+    const isPC = u.type === 'PC';
+    const div = document.createElement('div');
+    div.id = id;
+    div.className = `unit-card h-32 sm:h-36 w-full rounded-xl border-b-4 shadow-lg flex flex-col p-2 sm:p-3 ${isPC ? 'border-blue-500 draggable' : 'border-red-500'}`;
+    if (isPC) { div.draggable = true; div.ondragstart = handleDragStart; }
+    div.ondrop = handleDrop;
+    div.ondragover = e => { e.preventDefault(); if(GameState.phase === 'PLANNING') div.classList.add('target-hover'); };
+    div.ondragleave = e => div.classList.remove('target-hover');
+
+    // Badge Logic
+    let badge = "";
+    if (u.ability.type === 'Rolling') badge = `<span class="absolute top-1 right-1 px-1 py-0.5 bg-sky-600 text-[8px] sm:text-[10px] font-bold rounded text-white tracking-wider">ROLL (${u.ability.rolls})</span>`;
+    if (u.ability.type === 'Ignore') badge = `<span class="absolute top-1 right-1 px-1 py-0.5 bg-purple-600 text-[8px] sm:text-[10px] font-bold rounded text-white tracking-wider">IGNORE</span>`;
+    if (u.ability.heal > 0) badge = `<span class="absolute top-1 right-1 px-1 py-0.5 bg-emerald-600 text-[8px] sm:text-[10px] font-bold rounded text-white tracking-wider">HEAL (${u.ability.heal})</span>`;
+    if (u.ability.effect === 'Sustain Protocol') badge = `<span class="absolute top-1 right-1 px-1 py-0.5 bg-blue-600 text-[8px] sm:text-[10px] font-bold rounded text-white tracking-wider">SUSTAIN</span>`;
+
+    div.innerHTML = `
+        ${badge}
+        <div class="flex justify-between text-xs font-bold ${isPC?'text-blue-400':'text-red-400'} uppercase mt-1">
+            <span>${u.role || 'Enemy'}</span>
+        </div>
+        <div class="text-base sm:text-lg font-bold text-white">${u.name || id}</div>
+        <div class="text-[10px] sm:text-xs text-slate-400 text-center my-1">${u.ability.effect || 'Attack'} ${u.ability.rolls > 0 ? `(Roll 0-${u.ability.rolls})` : ''}</div>
+        <div class="w-full bg-slate-700 h-2 sm:h-3 rounded-full overflow-hidden mt-auto relative">
+            <div class="hp-fill h-full ${isPC?'bg-blue-500':'bg-red-500'} transition-all duration-500" style="width:100%"></div>
+        </div>
+        <div class="hp-text text-right text-xs text-slate-400 font-mono">${u.hp}/${u.maxHp}</div>
+    `;
+    return div;
+}
+
+function init() {
+    const pCon = document.getElementById('player-container');
+    const eCon = document.getElementById('enemy-container');
+    Object.entries(UnitData.PCs).forEach(([name, data], i) => {
+        const id = `PC_${i}`;
+        GameState.units[id] = { ...data, name, type: 'PC', hp: data.maxHp, id };
+        pCon.appendChild(createCard(GameState.units[id], id));
+    });
+    const enemies = [{...UnitData.ENs.Dagger}, {...UnitData.ENs.Crawler}, {...UnitData.ENs.Flare}, {...UnitData.ENs.Mace}];
+    enemies.forEach((data, i) => {
+        const id = `EN_${i}`;
+        GameState.units[id] = { ...data, type: 'EN', hp: data.maxHp, id, baseName: data.name };
+        eCon.appendChild(createCard(GameState.units[id], id));
+    });
+
+    // Start the game with the dialogue sequence
+    startDialogue(Script);
+}
+window.onload = init;
+</script>
+</body>
 </html>
