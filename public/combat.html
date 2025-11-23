@@ -820,7 +820,8 @@ function handleTouchMove(e) {
 function handleTouchEnd(e) {
     if (!touchDragState.isDragging || GameState.phase !== 'PLANNING') return;
     
-    e.preventDefault();
+    // Only prevent default if the event is cancelable to avoid warning
+    if (e.cancelable) e.preventDefault();
     
     const touch = e.changedTouches[0];
     const elementAtPoint = document.elementFromPoint(touch.clientX, touch.clientY);
