@@ -31,12 +31,12 @@ app.get('/', (_req: Request, res: Response) => {
     res.send('Hello from Express + TypeScript');
 });
 
-app.get('/api/getDialogue', (req: Request, res: Response) => {
+app.post('/api/getDialogue', (req: Request, res: Response) => {
     // 1. Get and validate query parameters
-    const chapterNum = Number(req.query.ch);
-    const index1 = Number(req.query.i1); // Dialogue set index (e.g., 0, 1, 2...)
+    const chapterNum = Number(req.body.ch);
+    const index1 = Number(req.body.i1); // Dialogue set index (e.g., 0, 1, 2...)
     // Convert 'null' string or undefined to null, otherwise convert to number
-    const index2 = req.query.i2 !== 'null' && req.query.i2 !== undefined ? Number(req.query.i2) : null; 
+    const index2 = req.body.i2 !== 'null' && req.body.i2 !== undefined ? Number(req.body.i2) : null; 
 
     if (isNaN(chapterNum) || isNaN(index1)) {
         return res.status(400).json({ error: 'Invalid chapter number (ch) or dialogue set index (i1).' });

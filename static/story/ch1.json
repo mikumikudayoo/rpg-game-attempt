@@ -36,9 +36,16 @@
                 { "speaker": "D.Y.L.A.N", "text": "great! lets go fight these guys!!" }
             ],
             [
-                { "speaker": "D.Y.L.A.N", "text": "yoooo u really do fit as our new manager!!" },
-                { "speaker": "You", "text": "what, i thought i was in a-" },
-                { "speaker": "D.Y.L.A.N", "text": "nah ur good, ur good. now lets get going to the next level!!" }
+                { "speaker": "D.Y.L.A.N", "text": "yoo nice job bro" },
+                { "speaker": "You", "text": "dude i have a lot of questions, like what does rolling mean and what ignoring and stuff?" },
+                { "speaker": "D.Y.L.A.N", "text": "oh right i forgot about those, basically rolling means you roll a dice to determine if your character or enemy hits" },
+                { "speaker": "You", "text": "ohhhhhh" },
+                { "speaker": "D.Y.L.A.N", "text": "and ignoring means that the enemy just attacks you no matter what, so you have to trade damage with them" },
+                { "speaker": "You", "text": "dang thats rough" },
+                { "speaker": "D.Y.L.A.N", "text": "yeah tell me about it, but hey you did great for your first time!" },
+                { "speaker": "You", "text": "i still have more questions tho" },
+                { "speaker": "D.Y.L.A.N", "text": "dont worry you will learn it as we go on, its like learning mandarin" },
+                { "speaker": "D.Y.L.A.N", "text": "well let's move on to the next stage!!" }
             ]
         ]
     ]
