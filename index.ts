@@ -47,7 +47,7 @@ app.post('/api/getDialogue', (req: Request, res: Response) => {
     try {
         // Construct the absolute path to the JSON file. 
         // Assumes your Express server root is the base for /static.
-        const filePath = path.join(__dirname, 'static', 'story', `ch${chapterNum}.json`);
+        const filePath = path.join(__dirname, 'static', 'story', 'dialogue', `ch${chapterNum}.json`);
         
         // Load the JSON file synchronously
         chapterData = require(filePath); 
