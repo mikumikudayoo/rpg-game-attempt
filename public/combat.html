@@ -1162,7 +1162,7 @@ function createCard(u, id) {
         ${infoPopup}
         ${!isPC ? `
         <div class='enemy-hp'>
-            <div class='enemy-hp-fill ${isPC?'bg-blue-500':'bg-red-500'}' style='width:${(u.hp / u.maxHp) * 100}%'></div>
+            <div class='enemy-hp-fill bg-red-500' style='width:${(u.hp / u.maxHp) * 100}%; background-color: #ef4444;'></div>
             <div class='enemy-hp-text'>${u.hp}/${u.maxHp}</div>
         </div>
         <div class='mt-1'>
@@ -1170,8 +1170,8 @@ function createCard(u, id) {
             <div class='flex gap-2 flex-wrap justify-center'>${abilityBoxes}</div>
         </div>` : ''}
         ${isPC ? `<div class="text-[10px] sm:text-xs text-slate-400 text-center my-1">${u.ability.effect || 'Attack'} ${u.ability.rolls > 0 ? `(Roll 0-${u.ability.rolls})` : ''}</div>` : ''}
-        <div class="w-full bg-slate-700 h-2 sm:h-3 rounded-full overflow-hidden mt-auto relative">
-            <div class="hp-fill h-full ${isPC?'bg-blue-500':'bg-red-500'} transition-all duration-500" style="width:100%"></div>
+        <div class="w-full bg-slate-700 h-2 sm:h-3 rounded-full overflow-hidden mt-auto relative" style="background-color: #334155;">
+            <div class="hp-fill h-full ${isPC?'bg-blue-500':'bg-red-500'} transition-all duration-500" style="width:100%; background-color: ${isPC ? '#3b82f6' : '#ef4444'};"></div>
         </div>
         <div class="hp-text text-right text-xs text-slate-400 font-mono">${u.hp}/${u.maxHp}</div>
     `;
