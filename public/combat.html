@@ -95,6 +95,40 @@
         }
         @keyframes blink { 50% { opacity: 0; } }
         .blinking-arrow { animation: blink 1s step-start infinite; }
+        /* Enemy Info Popup */
+        .info-popup { position: absolute; top: 2.25rem; right: 0.5rem; background: rgba(2,6,23,0.95); border: 1px solid #334155; border-radius: 0.5rem; padding: 0.5rem 0.75rem; z-index: 30; min-width: 180px; box-shadow: 0 10px 30px rgba(0,0,0,0.4); }
+        .info-line { font-size: 0.75rem; color: #cbd5e1; }
+        .info-title { font-size: 0.8rem; font-weight: 800; color: #f59e0b; }
+        .info-btn { position: absolute; top: 0.25rem; right: 0.25rem; background: #0ea5e9; color: white; font-weight: 800; border-radius: 0.375rem; padding: 0.2rem 0.4rem; font-size: 0.65rem; }
+        /* Ability Boxes */
+        .ability-box { width: 48px; height: 48px; border: 1px solid #334155; border-radius: 0.5rem; display: inline-flex; align-items: center; justify-content: center; background: rgba(30,41,59,0.6); }
+        @media (min-width: 768px) {
+            .ability-box { width: 56px; height: 56px; }
+        }
+
+        /* Enemy prominent health bar */
+        .enemy-hp {
+            position: relative;
+            width: 100%;
+            height: 10px;
+            border-radius: 9999px; /* full round */
+            background: #334155; /* slate-700 */
+            overflow: hidden;
+            margin: 4px 0 6px 0;
+        }
+        .enemy-hp-fill {
+            height: 100%;
+            width: 100%;
+            transition: width 300ms ease;
+        }
+        .enemy-hp-text {
+            position: absolute;
+            top: -18px;
+            right: 0;
+            font-size: 10px;
+            color: #cbd5e1; /* slate-300 */
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        }
     </style>
 </head>
 <body>
@@ -194,10 +228,10 @@ const UnitData = {
         "Locus": 	{ maxHp: 40, role: "DPS", 	ability: { damage: 7, 	heal: 0, minroll: 0, rolls: 5, type: "Adaptive", effect: "Quick Attack" } }
     },
     ENs: {
-        "Dagger": { maxHp: 15, name: "Dagger", ability: { damage: 5, 	minroll: 0, rolls: 3, type: "Rolling" }, passives: {} },
-        "Flare": 	{ maxHp: 12, name: "Flare", 	ability: { damage: 3, 	minroll: 0, rolls: 0, type: "Ignore" }, 	passives: {} },
-        "Mace": 	{ maxHp: 40, name: "Mace", 	ability: { damage: 8, 	minroll: 0, rolls: 4, type: "Rolling" }, passives: { thorns: 2 } },
-        "Crawler":{ maxHp: 20, name: "Crawler",ability: { damage: 10, minroll: 0, rolls: 2, type: "Rolling" }, passives: {} }
+        "Dagger": { maxHp: 15, name: "Dagger", ability: { damage: 5, 	minroll: 0, rolls: 3, type: "Rolling" }, passives: [] },
+        "Flare": 	{ maxHp: 12, name: "Flare", 	ability: { damage: 3, 	minroll: 0, rolls: 0, type: "Ignore" }, 	passives: [] },
+        "Mace": 	{ maxHp: 40, name: "Mace", 	ability: { damage: 8, 	minroll: 0, rolls: 4, type: "Rolling" }, passives: ["Aero-Mesh"] },
+        "Crawler":{ maxHp: 20, name: "Crawler",ability: { damage: 10, minroll: 0, rolls: 2, type: "Rolling" }, passives: [] }
     }
 };
 
@@ -211,6 +245,7 @@ let GameState = {
     dragCurrent: null,
     visualActions: [],
     actedEnemies: new Set(),
+    abilityTargets: {},
     
     // Dialogue State
     currentScript: [],
@@ -472,27 +507,26 @@ function log(msg, type='def') {
 
 function applyDamage(id, amt) {
     const u = GameState.units[id];
-    if (!u || u.hp <= 0) return;
+        if (!u || u.hp <= 0) return; // Check if unit exists and is alive
     u.hp = Math.max(0, u.hp - amt);
     updateUI(id);
 }
 
 function applyHeal(id, amt) {
     const u = GameState.units[id];
-    if (!u || u.hp <= 0) return;
+        if (!u || u.hp <= 0) return; // Check if unit exists and is alive
     u.hp = Math.min(u.maxHp, u.hp + amt);
     spawnFloatText(id, `+${amt}`, 'text-emerald-400');
     updateUI(id);
 }
 
 // Special Ability Logic
-function handleChain(srcId, tgtId) {
+async function handleChain(srcId, tgtId) {
     const others = Object.keys(GameState.units).filter(k => k.startsWith('EN') && k !== tgtId && GameState.units[k].hp > 0);
     if (others.length > 0) {
         const jumpId = others[Math.floor(Math.random() * others.length)];
         const dmg = 6;
-        applyDamage(jumpId, dmg);
-        spawnFloatText(jumpId, `-${dmg} (Chain)`, 'text-purple-400');
+        await applyDamageWithIndicators(srcId, jumpId, dmg, 'text-purple-400');
         log(`${GameState.units[srcId].name} Chain Strike jumped to ${GameState.units[jumpId].name}.`, 'sys');
         checkDeaths();
     }
@@ -521,35 +555,23 @@ async function resolveCombat() {
     document.getElementById('turn-indicator').className = "text-lg sm:text-2xl font-bold text-red-500 animate-pulse";
 
     // --- PLAYER INITIATED ACTIONS ---
-    for (const [srcId, tgtId] of actions) {
+    for (const [srcId, rawTgtId] of actions) {
+        const tgtId = GameState.abilityTargets[rawTgtId] || rawTgtId; // translate ability box to parent enemy for logic
         const src = GameState.units[srcId];
         const tgt = GameState.units[tgtId];
-        if (!src || src.hp <= 0) continue;
+        if (!src || src.hp <= 0) { log(`${src ? src.name : srcId} is down. Skipping order.`, 'sys'); continue; }
+        if (!tgt || tgt.hp <= 0) { log(`${tgt ? tgt.name : 'Target'} already destroyed. Skipping order.`, 'sys'); continue; }
 
         if (tgt.type === 'EN') GameState.actedEnemies.add(tgtId);
 
-        // Highlight
-        const srcEl = document.getElementById(srcId);
-        const tgtEl = document.getElementById(tgtId);
-        srcEl.classList.add('acting');
-        if (tgtEl) tgtEl.classList.add('acting');
-
-        // 1. HEALING
-        if (src.ability.heal > 0 && tgt.type === 'PC') {
-            const vis = { src: srcId, tgt: tgtId, color: '#10b981' };
-            GameState.visualActions.push(vis);
-            await wait(600);
+        // Execute player action
+        if (tgt.type === 'EN' && src.ability.damage > 0) {
+            await resolveDuel(srcId, tgtId, rawTgtId);
+        } else if (tgt.type === 'PC' && src.ability.heal > 0) {
             applyHeal(tgtId, src.ability.heal);
-            log(`${src.name} repairs ${tgt.name} for ${src.ability.heal} HP.`, 'heal');
-            GameState.visualActions = GameState.visualActions.filter(v => v !== vis);
+            log(`${src.name} heals ${tgt.name} for ${src.ability.heal}.`, 'heal');
         }
-        // 2. COMBAT (PC vs EN)
-        else if (tgt.type === 'EN') {
-            await resolveDuel(srcId, tgtId);
-        }
-        
-        srcEl.classList.remove('acting');
-        if (tgtEl) tgtEl.classList.remove('acting');
+
         checkDeaths();
         await wait(400);
         if(checkWinLoss()) return;
@@ -577,12 +599,16 @@ async function resolveCombat() {
     document.querySelectorAll('.winner, .loser').forEach(el => el.classList.remove('winner', 'loser'));
 }
 
-async function resolveDuel(srcId, tgtId) {
+async function resolveDuel(srcId, tgtId, visualTgtId = null) {
     const src = GameState.units[srcId];
     const tgt = GameState.units[tgtId];
+    if (!src || src.hp <= 0 || !tgt || tgt.hp <= 0) {
+        log('Engagement canceled: unit down.', 'sys');
+        return;
+    }
     
     // Visual Setup
-    const vis = { src: srcId, tgt: tgtId, color: '#ffffff' };
+    const vis = { src: srcId, tgt: visualTgtId || tgtId, color: '#ffffff' };
     GameState.visualActions.push(vis);
     
     const isRollingEnemy = (tgt.ability.type === 'Rolling');
@@ -612,9 +638,7 @@ async function resolveDuel(srcId, tgtId) {
             document.getElementById(srcId).classList.add('winner');
             document.getElementById(tgtId).classList.add('loser');
             
-            const dmg = src.ability.damage;
-            applyDamage(tgtId, dmg);
-            spawnFloatText(tgtId, `💥 ${dmg}`, 'text-red-500');
+            await applyDamageWithIndicators(srcId, tgtId, src.ability.damage);
         } else if (pcRoll < enRoll) {
             // ENEMY WINS (PC takes damage)
             pcHit = false;
@@ -622,23 +646,19 @@ async function resolveDuel(srcId, tgtId) {
             document.getElementById(tgtId).classList.add('winner');
             document.getElementById(srcId).classList.add('loser');
 
-            const dmg = tgt.ability.damage;
-            applyDamage(srcId, dmg);
-            spawnFloatText(srcId, `💥 ${dmg}`, 'text-red-500');
+            await applyDamageWithIndicators(tgtId, srcId, tgt.ability.damage);
         } else { 
             // TIE (Trade)
             pcHit = true; // PC lands a hit in a tie
             vis.color = '#f59e0b';
             log(`Duel Tied (${pcRoll}). Both take damage.`, 'tie');
             
-            applyDamage(tgtId, src.ability.damage);
-            spawnFloatText(tgtId, `-${src.ability.damage}`, 'text-red-500');
-            
-            applyDamage(srcId, tgt.ability.damage);
-            spawnFloatText(srcId, `-${tgt.ability.damage}`, 'text-red-500');
+            await applyDamageWithIndicators(srcId, tgtId, src.ability.damage);
+
+            await applyDamageWithIndicators(tgtId, srcId, tgt.ability.damage);
 
             // Chain Logic in ties
-            if (src.ability.effect === 'Chain Strike') handleChain(srcId, tgtId);
+            if (src.ability.effect === 'Chain Strike') await handleChain(srcId, tgtId);
         }
     } else {
         // --- IGNORE TARGET (TRADE) ---
@@ -648,13 +668,11 @@ async function resolveDuel(srcId, tgtId) {
         
         await wait(600);
         
-        applyDamage(tgtId, src.ability.damage);
-        spawnFloatText(tgtId, `-${src.ability.damage}`, 'text-red-500');
+        await applyDamageWithIndicators(srcId, tgtId, src.ability.damage);
         
-        applyDamage(srcId, tgt.ability.damage);
-        spawnFloatText(srcId, `-${tgt.ability.damage}`, 'text-red-500');
+        await applyDamageWithIndicators(tgtId, srcId, tgt.ability.damage);
         
-        if (src.ability.effect === 'Chain Strike') handleChain(srcId, tgtId);
+        if (src.ability.effect === 'Chain Strike') await handleChain(srcId, tgtId);
     }
     
     // --- SUSTAIN PROTOCOL LOGIC ---
@@ -687,8 +705,7 @@ async function resolveUnengagedEnemies() {
             GameState.visualActions.push(vis);
             await wait(800);
 
-            applyDamage(tgtId, en.ability.damage);
-            spawnFloatText(tgtId, `-${en.ability.damage}`, 'text-red-500');
+            applyDamageWithIndicators(enId, tgtId, en.ability.damage);
             log(`${en.name} free hit on ${GameState.units[tgtId].name}.`, 'dmg');
             
             GameState.visualActions = GameState.visualActions.filter(v => v !== vis);
@@ -750,6 +767,70 @@ function checkDeaths() {
             }
         }
     });
+}
+
+// Passive metadata definitions (looked up by name on units)
+const PassiveDefinitions = {
+    "Aero-Mesh": { desc: "Takes 2 less damage from Rolling attacks", func: "aeroMesh" }
+};
+
+// Passive effect function registry (implementation layer)
+const PassiveFunctions = {
+    aeroMesh: ({ sourceId, targetId, damage }) => {
+        return Math.max(0, damage - 2);
+    }
+};
+
+// Compute final damage taking defender passive names into account
+function computeDamageTaken(sourceId, targetId, baseDamage) {
+    const defender = GameState.units[targetId];
+    if (!defender || baseDamage <= 0) return baseDamage;
+    let dmg = baseDamage;
+    if (Array.isArray(defender.passives)) {
+        defender.passives.forEach(name => {
+            const meta = PassiveDefinitions[name];
+            if (meta && meta.func && typeof PassiveFunctions[meta.func] === 'function') {
+                dmg = PassiveFunctions[meta.func]({ sourceId, targetId, damage: dmg });
+            }
+        });
+    }
+    return dmg;
+}
+
+// Compute detailed damage result including per-passive modifiers
+function computeDamageDetail(sourceId, targetId, baseDamage) {
+    const defender = GameState.units[targetId];
+    if (!defender || baseDamage <= 0) return { final: Math.max(0, baseDamage), mods: [] };
+    let dmg = baseDamage;
+    const mods = [];
+    if (Array.isArray(defender.passives)) {
+        defender.passives.forEach(name => {
+            const meta = PassiveDefinitions[name];
+            if (meta && meta.func && typeof PassiveFunctions[meta.func] === 'function') {
+                const before = dmg;
+                const after = PassiveFunctions[meta.func]({ sourceId, targetId, damage: dmg });
+                if (after !== before) mods.push({ name, delta: after - before });
+                dmg = after;
+            }
+        });
+    }
+    return { final: Math.max(0, dmg), mods };
+}
+
+// Apply damage and show indicators for original vs final damage when modified
+async function applyDamageWithIndicators(sourceId, targetId, baseDamage, color = 'text-red-500') {
+    const detail = computeDamageDetail(sourceId, targetId, baseDamage);
+    if (detail.mods.length > 0) {
+        // Show original in muted color, then final with reasons after delay
+        spawnFloatText(targetId, `-${baseDamage}`, 'text-slate-400');
+        await wait(500);
+        spawnFloatText(targetId, `-${detail.final}`, color);
+        applyDamage(targetId, detail.final);
+    } else {
+        spawnFloatText(targetId, `-${detail.final}`, color);
+        applyDamage(targetId, detail.final);
+    }
+    return detail.final;
 }
 
 function checkWinLoss() {
@@ -825,18 +906,24 @@ function handleDrop(e) {
     const tgtCard = e.target.closest('.unit-card');
     
     if (tgtCard && srcId) {
-        const tgtId = tgtCard.id;
+        let tgtId = tgtCard.id;
         const src = GameState.units[srcId];
-        const tgt = GameState.units[tgtId];
+        // Translate ability box to parent enemy for validation lookup
+        const parentId = GameState.abilityTargets[tgtId];
+        const tgt = GameState.units[parentId || tgtId];
         
         let valid = false;
-        // PC attacking EN
-        if (tgt.type === 'EN' && src.ability.damage > 0) valid = true;
-        // PC healing PC
-        if (tgt.type === 'PC' && src.ability.heal > 0) valid = true;
+        // Only allow actions on living targets and from living sources
+        if (!src || src.hp <= 0 || !tgt || tgt.hp <= 0) valid = false;
+        else {
+            // PC attacking EN ability boxes only (must have parent mapping)
+            if ((tgt.type === 'EN') && src.ability.damage > 0 && !!parentId) valid = true;
+            // PC healing PC
+            if (tgt.type === 'PC' && src.ability.heal > 0) valid = true;
+        }
         
         if (valid) {
-            GameState.pendingActions[srcId] = tgtId;
+            GameState.pendingActions[srcId] = tgtCard.id; // keep visual target (ability box or enemy)
             document.getElementById(srcId).classList.add('assigned');
         }
     }
@@ -858,12 +945,14 @@ document.addEventListener('dragend', e => {
 // Helper function to validate if a drag action is valid
 function isValidDragTarget(srcId, tgtId) {
     const src = GameState.units[srcId];
-    const tgt = GameState.units[tgtId];
+    const parentId = GameState.abilityTargets[tgtId];
+    const tgt = GameState.units[parentId || tgtId];
     
     if (!src || !tgt) return false;
+    if (src.hp <= 0 || tgt.hp <= 0) return false;
     
-    // PC attacking EN
-    if (tgt.type === 'EN' && src.ability.damage > 0) return true;
+    // PC attacking EN ability boxes only (tgtId must resolve via parentId)
+    if (tgt.type === 'EN' && src.ability.damage > 0 && !!parentId) return true;
     // PC healing PC
     if (tgt.type === 'PC' && src.ability.heal > 0) return true;
     
@@ -980,6 +1069,11 @@ function updateUI(id) {
     if (!el) return;
     el.querySelector('.hp-fill').style.width = `${(u.hp / u.maxHp) * 100}%`;
     el.querySelector('.hp-text').innerText = `${u.hp}/${u.maxHp}`;
+    // Update enemy prominent HP bar if present
+    const eFill = el.querySelector('.enemy-hp-fill');
+    const eText = el.querySelector('.enemy-hp-text');
+    if (eFill) eFill.style.width = `${(u.hp / u.maxHp) * 100}%`;
+    if (eText) eText.innerText = `${u.hp}/${u.maxHp}`;
     if(u.hp <= 0) { el.classList.add('opacity-50', 'grayscale'); el.draggable = false; }
 }
 
@@ -1001,20 +1095,81 @@ function createCard(u, id) {
     div.addEventListener('touchend', handleTouchEnd, { passive: false });
     div.addEventListener('touchcancel', handleTouchCancel, { passive: false });
 
-    // Badge Logic
+    // Badge Logic (only for player cards)
     let badge = "";
-    if (u.ability.type === 'Rolling') badge = `<span class="absolute top-1 right-1 px-1 py-0.5 bg-sky-600 text-[8px] sm:text-[10px] font-bold rounded text-white tracking-wider">ROLL (${u.ability.rolls})</span>`;
-    if (u.ability.type === 'Ignore') badge = `<span class="absolute top-1 right-1 px-1 py-0.5 bg-purple-600 text-[8px] sm:text-[10px] font-bold rounded text-white tracking-wider">IGNORE</span>`;
-    if (u.ability.heal > 0) badge = `<span class="absolute top-1 right-1 px-1 py-0.5 bg-emerald-600 text-[8px] sm:text-[10px] font-bold rounded text-white tracking-wider">HEAL (${u.ability.heal})</span>`;
-    if (u.ability.effect === 'Sustain Protocol') badge = `<span class="absolute top-1 right-1 px-1 py-0.5 bg-blue-600 text-[8px] sm:text-[10px] font-bold rounded text-white tracking-wider">SUSTAIN</span>`;
+    if (isPC) {
+        if (u.ability.type === 'Rolling') badge = `<span class="absolute top-1 right-1 px-1 py-0.5 bg-sky-600 text-[8px] sm:text-[10px] font-bold rounded text-white tracking-wider">ROLL (${u.ability.rolls})</span>`;
+        if (u.ability.type === 'Ignore') badge = `<span class="absolute top-1 right-1 px-1 py-0.5 bg-purple-600 text-[8px] sm:text-[10px] font-bold rounded text-white tracking-wider">IGNORE</span>`;
+        if (u.ability.heal > 0) badge = `<span class="absolute top-1 right-1 px-1 py-0.5 bg-emerald-600 text-[8px] sm:text-[10px] font-bold rounded text-white tracking-wider">HEAL (${u.ability.heal})</span>`;
+        if (u.ability.effect === 'Sustain Protocol') badge = `<span class="absolute top-1 right-1 px-1 py-0.5 bg-blue-600 text-[8px] sm:text-[10px] font-bold rounded text-white tracking-wider">SUSTAIN</span>`;
+    }
+
+    const infoBtn = `<button class="info-btn" onclick="toggleInfo('${id}')">INFO</button>`;
+    const passiveList = (Array.isArray(u.passives) && u.passives.length>0) ? u.passives.map(n=>`<div class='info-line'>• ${n}: ${PassiveDefinitions[n]?.desc || ''}</div>`).join('') : `<div class='info-line text-slate-500'>No passives</div>`;
+    const infoPopup = (()=>{
+        let abilityInfo = '';
+        if (Array.isArray(u.abilities) && u.abilities.length > 0) {
+            abilityInfo = u.abilities.map((ab, idx)=>{
+                const label = `A${idx+1}`;
+                return `<div class='info-line'><span class='font-bold text-slate-200'>${label}:</span> ${ab.type}${ab.rolls>0?` (Roll 0-${ab.rolls})`:''} • DMG ${ab.damage ?? 0}</div>`;
+            }).join('');
+        } else {
+            abilityInfo = `<div class='info-line'><span class='font-bold text-slate-200'>A1:</span> ${u.ability.type}${u.ability.rolls>0?` (Roll 0-${u.ability.rolls})`:''} • DMG ${u.ability.damage ?? 0}</div>`;
+        }
+        return `
+        <div id="${id}-info" class="info-popup hidden">
+            <div class='info-title'>${u.baseName || u.name} Overview</div>
+            ${abilityInfo}
+            <div class='info-title mt-1'>Passives</div>
+            ${passiveList}
+        </div>`;
+    })();
+
+    // Icon HTML: support image paths or simple emoji/text
+    let iconHtml = '';
+    if (u.icon) {
+        const isImg = /\.(png|jpe?g|gif|webp|svg)$|^https?:\/\//i.test(String(u.icon));
+        if (isImg) {
+            iconHtml = `<img src="${u.icon}" alt="${u.name || id}" class="w-full h-full object-cover">`;
+        } else {
+            const safe = String(u.icon).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            iconHtml = `<div class="text-xl sm:text-2xl">${safe}</div>`;
+        }
+    }
+
+    // Enemy ability boxes (square boxes A1, A2, ...)
+    const abilityBoxes = (!isPC) ? (()=>{ 
+        let boxes = '';
+        const abilities = Array.isArray(u.abilities) && u.abilities.length>0 ? u.abilities : [u.ability];
+        abilities.forEach((ab, idx)=>{
+            const abId = `${id}_AB_${idx}`;
+            GameState.abilityTargets[abId]=id;
+            boxes += `<div id='${abId}' class='ability-box unit-card text-xs text-slate-200'>A${idx+1}</div>`;
+        });
+        return boxes;
+    })() : '';
 
     div.innerHTML = `
         ${badge}
+        ${infoBtn}
         <div class="flex justify-between text-xs font-bold ${isPC?'text-blue-400':'text-red-400'} uppercase mt-1">
             <span>${u.role || 'Enemy'}</span>
         </div>
-        <div class="text-base sm:text-lg font-bold text-white">${u.name || id}</div>
-        <div class="text-[10px] sm:text-xs text-slate-400 text-center my-1">${u.ability.effect || 'Attack'} ${u.ability.rolls > 0 ? `(Roll 0-${u.ability.rolls})` : ''}</div>
+        <div class="flex items-center gap-3">
+            <div class="unit-icon">${iconHtml}</div>
+            <div class="text-base sm:text-lg font-bold text-white">${u.name || id}</div>
+        </div>
+        ${infoPopup}
+        ${!isPC ? `
+        <div class='enemy-hp'>
+            <div class='enemy-hp-fill ${isPC?'bg-blue-500':'bg-red-500'}' style='width:${(u.hp / u.maxHp) * 100}%'></div>
+            <div class='enemy-hp-text'>${u.hp}/${u.maxHp}</div>
+        </div>
+        <div class='mt-1'>
+            <div class='text-[10px] sm:text-xs text-slate-400 mb-1 text-center'>Abilities</div>
+            <div class='flex gap-2 flex-wrap justify-center'>${abilityBoxes}</div>
+        </div>` : ''}
+        ${isPC ? `<div class="text-[10px] sm:text-xs text-slate-400 text-center my-1">${u.ability.effect || 'Attack'} ${u.ability.rolls > 0 ? `(Roll 0-${u.ability.rolls})` : ''}</div>` : ''}
         <div class="w-full bg-slate-700 h-2 sm:h-3 rounded-full overflow-hidden mt-auto relative">
             <div class="hp-fill h-full ${isPC?'bg-blue-500':'bg-red-500'} transition-all duration-500" style="width:100%"></div>
         </div>
@@ -1042,6 +1197,13 @@ function init() {
     startDialogue(Script);
 }
 window.onload = init;
+
+// Toggle enemy info popup
+window.toggleInfo = function(id) {
+    const el = document.getElementById(`${id}-info`);
+    if (!el) return;
+    el.classList.toggle('hidden');
+};
 </script>
 </body>
 </html>

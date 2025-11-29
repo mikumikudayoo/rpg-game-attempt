@@ -1,0 +1,3 @@
+{
+    "Aero-Mesh":  { "desc": "Takes 2 less damage from Rolling attacks", "func": "aeroMesh" }
+}
