@@ -101,33 +101,43 @@
         .info-title { font-size: 0.8rem; font-weight: 800; color: #f59e0b; }
         .info-btn { position: absolute; top: 0.25rem; right: 0.25rem; background: #0ea5e9; color: white; font-weight: 800; border-radius: 0.375rem; padding: 0.2rem 0.4rem; font-size: 0.65rem; }
         /* Ability Boxes */
-        .ability-box { width: 48px; height: 48px; border: 1px solid #334155; border-radius: 0.5rem; display: inline-flex; align-items: center; justify-content: center; background: rgba(30,41,59,0.6); }
+        .ability-box { width: 48px; height: 48px; border: 1px solid #334155; border-radius: 0.5rem; display: inline-flex; align-items: center; justify-content: center; background: rgba(30,41,59,0.6); margin-bottom: 6px; }
         @media (min-width: 768px) {
-            .ability-box { width: 56px; height: 56px; }
+            .ability-box { width: 56px; height: 56px; margin-bottom: 8px; }
         }
+
+        /* Card inner content spacing so ability boxes don't overlap the bottom border */
+        .card-content { padding-bottom: 0.9rem; }
+        @media (min-width: 768px) { .card-content { padding-bottom: 1.1rem; } }
 
         /* Enemy prominent health bar */
         .enemy-hp {
             position: relative;
             width: 100%;
-            height: 10px;
+            height: 12px;
+            min-height: 12px;
             border-radius: 9999px; /* full round */
-            background: #334155; /* slate-700 */
+            background: #253244; /* slightly darker for contrast */
             overflow: hidden;
             margin: 4px 0 6px 0;
+            border: 1px solid rgba(255,255,255,0.04);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
         }
         .enemy-hp-fill {
             height: 100%;
             width: 100%;
             transition: width 300ms ease;
+            background: linear-gradient(90deg, #ef4444 0%, #f97316 100%); /* visible gradient */
+            box-shadow: inset 0 -2px 6px rgba(0,0,0,0.4);
         }
         .enemy-hp-text {
             position: absolute;
             top: -18px;
             right: 0;
             font-size: 10px;
-            color: #cbd5e1; /* slate-300 */
+            color: #e2e8f0; /* slightly brighter */
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            text-shadow: 0 1px 0 rgba(0,0,0,0.6);
         }
     </style>
 </head>
@@ -460,9 +470,16 @@ function animate() {
     
     // 1. Planning Lines (Amber Dashed)
     if (GameState.phase === 'PLANNING') {
-        Object.entries(GameState.pendingActions).forEach(([src, tgt]) => {
-            const s = getCenter(src);
-            const t = getCenter(tgt);
+        Object.entries(GameState.pendingActions).forEach(([srcKey, action]) => {
+            // action can be a string (legacy) or an object { srcBoxId, tgt }
+            let srcIdForCenter = srcKey;
+            let tgtVisual = action;
+            if (action && typeof action === 'object') {
+                srcIdForCenter = action.srcBoxId || srcKey;
+                tgtVisual = action.tgt;
+            }
+            const s = getCenter(srcIdForCenter);
+            const t = getCenter(tgtVisual);
             if (s && t) drawArrow(s.x, s.y, t.x, t.y, '#fbbf24', true);
         });
     }
@@ -555,7 +572,11 @@ async function resolveCombat() {
     document.getElementById('turn-indicator').className = "text-lg sm:text-2xl font-bold text-red-500 animate-pulse";
 
     // --- PLAYER INITIATED ACTIONS ---
-    for (const [srcId, rawTgtId] of actions) {
+    for (const [srcId, action] of actions) {
+        // support legacy (string) format and new object format { srcBoxId, tgt }
+        let rawTgtId = action;
+        let srcBoxId = null;
+        if (action && typeof action === 'object') { rawTgtId = action.tgt; srcBoxId = action.srcBoxId; }
         const tgtId = GameState.abilityTargets[rawTgtId] || rawTgtId; // translate ability box to parent enemy for logic
         const src = GameState.units[srcId];
         const tgt = GameState.units[tgtId];
@@ -566,7 +587,7 @@ async function resolveCombat() {
 
         // Execute player action
         if (tgt.type === 'EN' && src.ability.damage > 0) {
-            await resolveDuel(srcId, tgtId, rawTgtId);
+            await resolveDuel(srcId, tgtId, rawTgtId, srcBoxId);
         } else if (tgt.type === 'PC' && src.ability.heal > 0) {
             applyHeal(tgtId, src.ability.heal);
             log(`${src.name} heals ${tgt.name} for ${src.ability.heal}.`, 'heal');
@@ -599,7 +620,7 @@ async function resolveCombat() {
     document.querySelectorAll('.winner, .loser').forEach(el => el.classList.remove('winner', 'loser'));
 }
 
-async function resolveDuel(srcId, tgtId, visualTgtId = null) {
+async function resolveDuel(srcId, tgtId, visualTgtId = null, visualSrcId = null) {
     const src = GameState.units[srcId];
     const tgt = GameState.units[tgtId];
     if (!src || src.hp <= 0 || !tgt || tgt.hp <= 0) {
@@ -608,7 +629,7 @@ async function resolveDuel(srcId, tgtId, visualTgtId = null) {
     }
     
     // Visual Setup
-    const vis = { src: srcId, tgt: visualTgtId || tgtId, color: '#ffffff' };
+    const vis = { src: visualSrcId || srcId, tgt: visualTgtId || tgtId, color: '#ffffff' };
     GameState.visualActions.push(vis);
     
     const isRollingEnemy = (tgt.ability.type === 'Rolling');
@@ -701,7 +722,10 @@ async function resolveUnengagedEnemies() {
             const tgtId = targets[Math.floor(Math.random() * targets.length)];
             
             document.getElementById(enId).classList.add('acting');
-            const vis = { src: enId, tgt: tgtId, color: '#ef4444' };
+            // Prefer enemy ability-box as visual source if available
+            const enBox = Object.keys(GameState.abilityTargets).find(k => GameState.abilityTargets[k] === enId);
+            const visSrc = enBox || enId;
+            const vis = { src: visSrc, tgt: tgtId, color: '#ef4444' };
             GameState.visualActions.push(vis);
             await wait(800);
 
@@ -759,10 +783,20 @@ function checkDeaths() {
             if (el && !el.classList.contains('opacity-50')) {
                 el.classList.add('opacity-50', 'grayscale');
                 el.draggable = false;
-                delete GameState.pendingActions[id];
-                // Remove actions targeting dead unit
-                for(const [k, v] of Object.entries(GameState.pendingActions)) {
-                    if(v === id) delete GameState.pendingActions[k];
+                // Remove any pending action where the source unit is the dead unit
+                if (GameState.pendingActions[id]) delete GameState.pendingActions[id];
+                // Remove actions targeting dead unit (visual target may be string or object)
+                for (const [k, v] of Object.entries(GameState.pendingActions)) {
+                    if (!v) continue;
+                    if (typeof v === 'string') {
+                        // visual target could be an ability-box id or unit id
+                        const targetUnit = GameState.abilityTargets[v] || v;
+                        if (targetUnit === id) delete GameState.pendingActions[k];
+                    } else if (typeof v === 'object') {
+                        const visual = v.tgt;
+                        const targetUnit = GameState.abilityTargets[visual] || visual;
+                        if (targetUnit === id) delete GameState.pendingActions[k];
+                    }
                 }
             }
         }
@@ -890,27 +924,39 @@ document.addEventListener('dragover', e => {
 // Desktop: Drag start
 function handleDragStart(e) {
     if (GameState.phase !== 'PLANNING') { e.preventDefault(); return; }
-    const id = e.target.closest('.unit-card').id;
-    if (GameState.units[id].hp <= 0) { e.preventDefault(); return; }
-    e.dataTransfer.setData('text/plain', id);
+    // Require dragging from an ability box. ability-box elements set dataTransfer in their own handlers,
+    // but fallback here to support cases where the event bubbles from children.
+    const ab = e.target.closest('.ability-box');
+    if (!ab) { e.preventDefault(); return; }
+    const abId = ab.id;
+    const parentId = GameState.abilityTargets[abId];
+    if (!parentId) { e.preventDefault(); return; }
+    if (GameState.units[parentId].hp <= 0) { e.preventDefault(); return; }
+    // set dataTransfer as 'unitId|abilityId'
+    e.dataTransfer.setData('text/plain', `${parentId}|${abId}`);
     e.dataTransfer.setDragImage(new Image(), 0, 0);
-    GameState.dragSourceId = id;
-    GameState.dragStart = getCenter(id);
+    GameState.dragSourceId = abId; // visual source is ability box
+    GameState.dragStart = getCenter(abId);
 }
 
 // Desktop: Drop
 function handleDrop(e) {
     e.preventDefault();
     if (GameState.phase !== 'PLANNING') return;
-    const srcId = e.dataTransfer.getData('text/plain');
+    const raw = e.dataTransfer.getData('text/plain');
+    const abTarget = e.target.closest('.ability-box');
     const tgtCard = e.target.closest('.unit-card');
     
-    if (tgtCard && srcId) {
-        let tgtId = tgtCard.id;
-        const src = GameState.units[srcId];
-        // Translate ability box to parent enemy for validation lookup
-        const parentId = GameState.abilityTargets[tgtId];
-        const tgt = GameState.units[parentId || tgtId];
+    if ((tgtCard || abTarget) && raw) {
+        const parts = raw.split('|');
+        const srcUnitId = parts[0];
+        const srcAbId = parts[1] || null;
+        // Determine visual target id: prefer ability-box id if dropping onto a box
+        let tgtVisualId = abTarget ? abTarget.id : tgtCard.id;
+        const src = GameState.units[srcUnitId];
+        // Translate visual target to logical unit id
+        const parentId = GameState.abilityTargets[tgtVisualId];
+        const tgt = GameState.units[parentId || tgtVisualId];
         
         let valid = false;
         // Only allow actions on living targets and from living sources
@@ -923,8 +969,11 @@ function handleDrop(e) {
         }
         
         if (valid) {
-            GameState.pendingActions[srcId] = tgtCard.id; // keep visual target (ability box or enemy)
-            document.getElementById(srcId).classList.add('assigned');
+            // Store pending action keyed by source unit id; store both the source ability box and visual target
+            GameState.pendingActions[srcUnitId] = { srcBoxId: srcAbId, tgt: tgtVisualId };
+            // Mark the source unit card as assigned
+            const srcCard = document.getElementById(srcUnitId);
+            if (srcCard) srcCard.classList.add('assigned');
         }
     }
     GameState.dragStart = null;
@@ -975,53 +1024,54 @@ function resetDragState() {
 
 function handleTouchStart(e) {
     if (GameState.phase !== 'PLANNING') return;
-    
-    const card = e.target.closest('.unit-card');
-    if (!card) return;
-    
-    const id = card.id;
-    const unit = GameState.units[id];
-    
-    // Only allow dragging from PC units with HP > 0
-    if (!id.startsWith('PC_') || unit.hp <= 0) return;
-    
+
+    // Require touch start on an ability box to begin a drag
+    const ab = e.target.closest('.ability-box');
+    if (!ab) return;
+    const abId = ab.id;
+    const parentId = GameState.abilityTargets[abId];
+    if (!parentId) return;
+    const unit = GameState.units[parentId];
+    if (!unit || unit.hp <= 0) return;
+
     // Prevent scrolling while dragging
     e.preventDefault();
     document.body.classList.add('dragging');
-    
-    touchDragState.srcId = id;
+
+    touchDragState.srcId = parentId; // source unit id
+    touchDragState.srcBoxId = abId; // visual source box id
     touchDragState.isDragging = true;
-    
+
     const touch = e.touches[0];
-    GameState.dragStart = getCenter(id);
+    GameState.dragStart = getCenter(abId);
     GameState.dragCurrent = { x: touch.clientX, y: touch.clientY };
 }
 
 function handleTouchMove(e) {
     if (!touchDragState.isDragging || GameState.phase !== 'PLANNING') return;
-    
+
     e.preventDefault(); // Prevent scrolling
-    
+
     const touch = e.touches[0];
-    // Keep arrow base synced with the source card center (touch)
-    if (touchDragState.srcId) {
-        const c = getCenter(touchDragState.srcId);
+    // Keep arrow base synced with the source ability-box center (touch)
+    if (touchDragState.srcBoxId) {
+        const c = getCenter(touchDragState.srcBoxId);
         if (c) GameState.dragStart = c;
     }
     GameState.dragCurrent = { x: touch.clientX, y: touch.clientY };
     // Auto-scroll when dragging near viewport edges on touch
     autoScrollIfNeeded(touch.clientY);
-    
+
     // Find element under touch point
     const elementAtPoint = document.elementFromPoint(touch.clientX, touch.clientY);
     const targetCard = elementAtPoint?.closest('.unit-card');
-    
+
     // Remove hover from previous target
     if (touchDragState.lastTarget && touchDragState.lastTarget !== targetCard) {
         touchDragState.lastTarget.classList.remove('target-hover');
         touchDragState.lastTarget = null;
     }
-    
+
     // Add hover to current target if valid
     if (targetCard && targetCard.id !== touchDragState.srcId) {
         if (isValidDragTarget(touchDragState.srcId, targetCard.id)) {
@@ -1039,18 +1089,19 @@ function handleTouchEnd(e) {
     
     const touch = e.changedTouches[0];
     const elementAtPoint = document.elementFromPoint(touch.clientX, touch.clientY);
+    const abTarget = elementAtPoint?.closest('.ability-box');
     const tgtCard = elementAtPoint?.closest('.unit-card');
-    
-    if (tgtCard && touchDragState.srcId) {
-        const srcId = touchDragState.srcId;
-        const tgtId = tgtCard.id;
-        
-        if (isValidDragTarget(srcId, tgtId)) {
-            GameState.pendingActions[srcId] = tgtId;
-            document.getElementById(srcId).classList.add('assigned');
+
+    if ((tgtCard || abTarget) && touchDragState.srcId) {
+        const srcUnitId = touchDragState.srcId;
+        const tgtVisualId = abTarget ? abTarget.id : tgtCard.id;
+
+        if (isValidDragTarget(srcUnitId, tgtVisualId)) {
+            GameState.pendingActions[srcUnitId] = { srcBoxId: touchDragState.srcBoxId || null, tgt: tgtVisualId };
+            const srcCard = document.getElementById(srcUnitId);
+            if (srcCard) srcCard.classList.add('assigned');
         }
     }
-    
     // Reset state
     resetDragState();
 }
@@ -1083,8 +1134,7 @@ function createCard(u, id) {
     div.id = id;
     div.className = `unit-card h-32 sm:h-36 w-full rounded-xl border-b-4 shadow-lg flex flex-col p-2 sm:p-3 ${isPC ? 'border-blue-500 draggable' : 'border-red-500'}`;
     
-    // Desktop drag and drop
-    if (isPC) { div.draggable = true; div.ondragstart = handleDragStart; }
+    // Desktop drag and drop: dragging now originates from ability boxes, not the whole card
     div.ondrop = handleDrop;
     div.ondragover = e => { e.preventDefault(); if(GameState.phase === 'PLANNING') div.classList.add('target-hover'); };
     div.ondragleave = e => div.classList.remove('target-hover');
@@ -1137,19 +1187,20 @@ function createCard(u, id) {
         }
     }
 
-    // Enemy ability boxes (square boxes A1, A2, ...)
-    const abilityBoxes = (!isPC) ? (()=>{ 
+    // Ability boxes (square boxes A1, A2, ...) for both enemies and players
+    const abilityBoxes = (()=>{ 
         let boxes = '';
         const abilities = Array.isArray(u.abilities) && u.abilities.length>0 ? u.abilities : [u.ability];
         abilities.forEach((ab, idx)=>{
             const abId = `${id}_AB_${idx}`;
             GameState.abilityTargets[abId]=id;
-            boxes += `<div id='${abId}' class='ability-box unit-card text-xs text-slate-200'>A${idx+1}</div>`;
+            boxes += `<div id='${abId}' class='ability-box text-xs text-slate-200'>A${idx+1}</div>`;
         });
         return boxes;
-    })() : '';
+    })();
 
     div.innerHTML = `
+        <div class="card-content">
         ${badge}
         ${infoBtn}
         <div class="flex justify-between text-xs font-bold ${isPC?'text-blue-400':'text-red-400'} uppercase mt-1">
@@ -1166,15 +1217,34 @@ function createCard(u, id) {
             <div class='enemy-hp-text'>${u.hp}/${u.maxHp}</div>
         </div>
         <div class='mt-1'>
-            <div class='text-[10px] sm:text-xs text-slate-400 mb-1 text-center'>Abilities</div>
             <div class='flex gap-2 flex-wrap justify-center'>${abilityBoxes}</div>
         </div>` : ''}
-        ${isPC ? `<div class="text-[10px] sm:text-xs text-slate-400 text-center my-1">${u.ability.effect || 'Attack'} ${u.ability.rolls > 0 ? `(Roll 0-${u.ability.rolls})` : ''}</div>` : ''}
-        <div class="w-full bg-slate-700 h-2 sm:h-3 rounded-full overflow-hidden mt-auto relative" style="background-color: #334155;">
+        ${isPC ? `<div class='flex gap-2 flex-wrap justify-center mb-1'>${abilityBoxes}</div>` : ''}
+        </div>
+        <div class="w-full bg-slate-700 h-2 sm:h-3 rounded-full overflow-hidden mt-auto relative z-30" style="background-color: #334155;">
             <div class="hp-fill h-full ${isPC?'bg-blue-500':'bg-red-500'} transition-all duration-500" style="width:100%; background-color: ${isPC ? '#3b82f6' : '#ef4444'};"></div>
         </div>
         <div class="hp-text text-right text-xs text-slate-400 font-mono">${u.hp}/${u.maxHp}</div>
     `;
+    // Attach drag handlers to ability boxes inside this card so dragging must originate from boxes
+    const boxes = div.querySelectorAll('.ability-box');
+    boxes.forEach(box => {
+        // Make player ability boxes draggable (sources). Enemy boxes should not be draggable by default.
+        const abId = box.id;
+        const parentId = GameState.abilityTargets[abId];
+        if (!parentId) return;
+        if (parentId.startsWith('PC_')) {
+            box.draggable = true;
+            box.ondragstart = function(ev) {
+                // dataTransfer: 'unitId|abilityId'
+                ev.dataTransfer.setData('text/plain', `${parentId}|${abId}`);
+                ev.dataTransfer.setDragImage(new Image(), 0, 0);
+                GameState.dragSourceId = abId;
+                GameState.dragStart = getCenter(abId);
+            };
+        }
+    });
+
     return div;
 }
 
