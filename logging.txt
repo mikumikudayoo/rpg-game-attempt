@@ -1,2 +1,3 @@
 11/23/25 - its 6pm rn and i have pretty much done most of the combat, all i need to do now is to sync it up to the backend
 11/23/25 - its 9pm, ima go sleep, i have added json files to add story and stuff
+11/29/25 - finally im back and able to code, im going to add support for a1 and a2
