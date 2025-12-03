@@ -6,15 +6,15 @@
   "devDependencies": {
     "@types/bun": "latest",
     "ts-node": "^10.9.2",
-    "tsx": "^4.20.6",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
-    "@types/express": "^5.0.5",
+    "@types/express": "^5.0.6",
     "@types/node": "^24.10.1",
-    "express": "^5.1.0"
+    "express": "^5.2.1"
   }
 }
