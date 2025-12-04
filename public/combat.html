@@ -79,6 +79,21 @@
         @media (min-width: 768px) {
             #dialogue-box { height: 250px; padding: 24px 32px; } /* Desktop height */
         }
+
+        /* Control panel animation */
+        #control-panel {
+            transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1), opacity 220ms ease;
+            will-change: transform, opacity;
+        }
+        /* Closed state: slightly translated right and invisible (collapsed to button) */
+        #control-panel.panel-closed {
+            transform: translateX(36px);
+            opacity: 0;
+            pointer-events: none;
+        }
+        /* Toggle button animation */
+        #controls-toggle { transition: transform 180ms cubic-bezier(.2,.9,.2,1), box-shadow 180ms ease; }
+        #controls-toggle.btn-animate { transform: scale(1.06); box-shadow: 0 12px 30px rgba(15,23,42,0.6); }
         #dialogue-speaker {
             color: #fbbf24; /* amber-400 */
             font-weight: 900;
@@ -159,16 +174,18 @@
             Restart Battle
         </button>
     </div>
+
+    <!-- controls toggle removed from modal; toggle added after main app so it is always available -->
 </div>
 
 <!-- Dialogue Box Overlay -->
 <div id="dialogue-box" class="flex flex-col justify-start" onclick="nextDialogue()">
     <div class="text-xl sm:text-2xl mb-1 sm:mb-2 flex items-center">
-        <span id="dialogue-speaker" class="mr-3">SPEAKER</span>
+        <span id="dialogue-speaker" class="mr-3">sigma</span>
         <span class="text-[10px] sm:text-xs text-slate-500 uppercase tracking-widest">-- Click to Advance --</span>
     </div>
     <div id="dialogue-text" class="text-slate-200">
-        This is where the dialogue will appear.
+        sigma sigma boy sigma boy sigma boy.
     </div>
     <div class="flex justify-end mt-auto text-3xl sm:text-4xl text-amber-400 pr-4 blinking-arrow">
         ▼
@@ -201,37 +218,42 @@
         </div>
     </header>
 
-    <div class="flex-1 flex flex-col relative">
-        <!-- Enemy Zone -->
-        <div class="flex-1 flex items-center justify-center p-2 sm:p-4 bg-slate-900/20">
-            <!-- Responsive Grid Change: 2 columns on small, 3 on medium, 5 on large -->
-            <div id="enemy-container" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 sm:gap-4 w-full max-w-6xl"></div>
-        </div>
+    <div class="flex-1 flex flex-row gap-4 p-4 relative">
+        
 
-        <!-- Controls (Log and Button) -->
-        <!-- Stacked on mobile, side-by-side on desktop -->
-        <div class="h-64 flex flex-col md:h-40 md:flex-row gap-2 sm:gap-4 px-4 sm:px-8 py-2 bg-slate-900/90 border-y border-slate-700 relative z-40 shadow-2xl">
-            <div id="combat-log" class="flex-1 min-h-[100px] md:min-h-0 bg-slate-950 rounded-lg border border-slate-700 p-3 overflow-y-auto text-xs font-mono space-y-1 opacity-90 shadow-inner">
+        
+        <!-- Main area: Players (left half) and Enemies (right half) -->
+        <main class="flex-1 flex flex-row items-stretch gap-0">
+            <section id="player-column" class="w-1/2 flex items-start justify-center pr-2">
+                <div id="player-container" class="w-full max-w-none grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3"></div>
+            </section>
+
+            <!-- Vertical divider exactly between halves -->
+            <div class="w-px bg-slate-700"></div>
+
+            <section id="enemy-column" class="w-1/2 flex items-start justify-center pl-2">
+                <div id="enemy-container" class="w-full grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+            </section>
+        </main>
+
+        <!-- Control Panel docked to the right (starts collapsed) -->
+        <aside id="control-panel" class="fixed right-4 top-12 w-80 h-[80vh] flex flex-col gap-4 p-3 bg-slate-900/90 rounded-lg border border-slate-700 shadow-lg panel-closed" style="z-index:99999;">
+            <div id="combat-log" class="flex-1 min-h-[120px] bg-slate-950 rounded-lg p-3 overflow-y-auto text-xs font-mono space-y-1 opacity-95">
                 <div class="text-amber-400">>> Combat Logic Loaded. Assign targets.</div>
             </div>
-            <!-- Button takes full width on mobile, fixed width on desktop -->
-            <div class="w-full md:w-48 flex flex-col justify-center">
-                <div class="flex flex-col gap-2">
-                    <button id="btn-reset" onclick="resetAssignments()" class="py-2 md:py-3 md:h-full w-full bg-red-600 hover:bg-red-500 text-white font-black text-sm uppercase tracking-widest rounded-lg shadow-lg border-b-4 border-red-800 active:border-b-0 active:translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed">Reset</button>
-                    <button id="btn-turn" onclick="resolveCombat()" class="mt-1 py-4 md:py-5 md:h-full w-full bg-amber-600 hover:bg-amber-500 text-white font-black text-lg sm:text-xl uppercase tracking-widest rounded-lg shadow-lg border-b-4 border-amber-800 active:border-b-0 active:translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                        Initiate<br class="hidden md:block">Combat
-                    </button>
-                </div>
+            <div class="flex flex-col">
+                <button id="btn-reset" onclick="resetAssignments()" class="py-2 md:py-3 md:h-full w-full bg-red-600 hover:bg-red-500 text-white font-black text-sm uppercase tracking-widest rounded-lg shadow-lg border-b-4 border-red-800 active:border-b-0 active:translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed">Reset</button>
+                <button id="btn-turn" onclick="resolveCombat()" class="mt-2 py-4 md:py-5 md:h-full w-full bg-amber-600 hover:bg-amber-500 text-white font-black text-lg sm:text-xl uppercase tracking-widest rounded-lg shadow-lg border-b-4 border-amber-800 active:border-b-0 active:translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    Initiate<br class="hidden md:block">Combat
+                </button>
             </div>
-        </div>
-
-        <!-- Player Zone -->
-        <div class="flex-1 flex items-center justify-center p-2 sm:p-4 bg-slate-800/30">
-            <!-- Responsive Grid Change: 2 columns on small, 3 on medium, 5 on large -->
-            <div id="player-container" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 sm:gap-4 w-full max-w-6xl"></div>
-        </div>
+        </aside>
     </div>
 </div>
+
+<!-- Global controls toggle and backdrop -->
+<button id="controls-toggle" style="z-index:999999;" class="fixed left-3 bottom-4 bg-amber-600 hover:bg-amber-500 text-white rounded-full w-12 h-12 flex items-center justify-center shadow-lg" onclick="toggleControlsOverlay()" aria-label="Show controls">☰</button>
+<!-- backdrop removed: control panel will no longer dim the page -->
 
 <script>
 // ==========================================
@@ -1771,6 +1793,28 @@ window.toggleInfo = function(id) {
     if (!el) return;
     el.classList.toggle('hidden');
 };
+
+// Mobile control panel toggle: show/hide control panel as an overlay on small screens
+window.toggleControlsOverlay = function() {
+    const btn = document.getElementById('controls-toggle');
+    const panel = document.getElementById('control-panel');
+    if (!panel || !btn) return;
+    const isClosed = panel.classList.contains('panel-closed');
+    if (isClosed) {
+        panel.classList.remove('panel-closed');
+        btn.innerText = '✕';
+    } else {
+        panel.classList.add('panel-closed');
+        btn.innerText = '☰';
+    }
+};
+
+// Small visual feedback for the toggle button when clicked
+document.getElementById('controls-toggle').addEventListener('click', function() {
+    const b = this;
+    b.classList.add('btn-animate');
+    setTimeout(() => b.classList.remove('btn-animate'), 220);
+});
 </script>
 </body>
 </html>
