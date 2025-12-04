@@ -216,9 +216,12 @@
             </div>
             <!-- Button takes full width on mobile, fixed width on desktop -->
             <div class="w-full md:w-48 flex flex-col justify-center">
-                <button id="btn-turn" onclick="resolveCombat()" class="py-3 md:h-full w-full bg-amber-600 hover:bg-amber-500 text-white font-black text-base sm:text-lg uppercase tracking-widest rounded-lg shadow-lg border-b-4 border-amber-800 active:border-b-0 active:translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                    Initiate<br class="hidden md:block">Combat
-                </button>
+                <div class="flex flex-col gap-2">
+                    <button id="btn-reset" onclick="resetAssignments()" class="py-2 md:py-3 md:h-full w-full bg-red-600 hover:bg-red-500 text-white font-black text-sm uppercase tracking-widest rounded-lg shadow-lg border-b-4 border-red-800 active:border-b-0 active:translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed">Reset</button>
+                    <button id="btn-turn" onclick="resolveCombat()" class="mt-1 py-4 md:py-5 md:h-full w-full bg-amber-600 hover:bg-amber-500 text-white font-black text-lg sm:text-xl uppercase tracking-widest rounded-lg shadow-lg border-b-4 border-amber-800 active:border-b-0 active:translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                        Initiate<br class="hidden md:block">Combat
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -263,6 +266,10 @@ let GameState = {
     abilityTargets: {},
     // Whether we still need to perform the initial animated speed roll after dialogue
     needsInitialRoll: true,
+    // Planned enemy actions during PLANNING: { [enId]: { srcBoxId, tgt } }
+    enemyActions: {},
+    // Order of player assignments (for undo)
+    assignmentOrder: [],
     
     // Dialogue State
     currentScript: [],
@@ -487,17 +494,130 @@ function animate() {
     
     // 1. Planning Lines (Amber Dashed)
     if (GameState.phase === 'PLANNING') {
+        // Clean out any plans for dead enemies or dead targets
+        if (GameState.enemyActions) {
+            Object.keys(GameState.enemyActions).forEach(enId => {
+                const plan = GameState.enemyActions[enId];
+                const enUnit = GameState.units[enId];
+                const tgtUnitId = GameState.abilityTargets[plan?.tgt] || plan?.tgt;
+                const tgtUnit = GameState.units[tgtUnitId];
+                if (!enUnit || enUnit.hp <= 0 || !tgtUnit || tgtUnit.hp <= 0) {
+                    delete GameState.enemyActions[enId];
+                }
+            });
+        }
+        // Ensure we have enemy plans to display (generate deterministically if absent)
+        if (!GameState.enemyActions || Object.keys(GameState.enemyActions).length === 0) {
+            try { computePlannedEnemyActions(); } catch (e) { console.error('computePlannedEnemyActions error', e); }
+        }
+        // Draw player planned actions (skip those that will be drawn as mutual with enemies below)
+        const mutualPairs = new Set();
+        Object.entries(GameState.enemyActions || {}).forEach(([enId, eAct]) => {
+            // skip dead enemies or plans with dead targets
+            const enUnit = GameState.units[enId];
+            let enTgtUnit = GameState.abilityTargets[eAct.tgt] || eAct.tgt;
+            const tgtUnit = GameState.units[enTgtUnit];
+            if (!enUnit || enUnit.hp <= 0) return;
+            if (!tgtUnit || tgtUnit.hp <= 0) return;
+            // resolve enemy's chosen target unit id
+            enTgtUnit = GameState.abilityTargets[eAct.tgt] || eAct.tgt;
+            // if that PC has an action targeting this enemy, mark as mutual for that specific PC
+            const pcAction = GameState.pendingActions[enTgtUnit];
+            if (pcAction) {
+                const raw = (typeof pcAction === 'object') ? pcAction.tgt : pcAction;
+                const resolved = GameState.abilityTargets[raw] || raw;
+                if (resolved === enId) mutualPairs.add(enId + '::' + enTgtUnit);
+            }
+        });
+
         Object.entries(GameState.pendingActions).forEach(([srcKey, action]) => {
-            // action can be a string (legacy) or an object { srcBoxId, tgt }
-            let srcIdForCenter = srcKey;
-            let tgtVisual = action;
+                let srcIdForCenter = srcKey;
+                let tgtVisual = action;
             if (action && typeof action === 'object') {
                 srcIdForCenter = action.srcBoxId || srcKey;
                 tgtVisual = action.tgt;
             }
-            const s = getCenter(srcIdForCenter);
-            const t = getCenter(tgtVisual);
-            if (s && t) drawArrow(s.x, s.y, t.x, t.y, '#fbbf24', true);
+                const tgtUnit = GameState.abilityTargets[tgtVisual] || tgtVisual;
+                // If this pending action is mutual (enemy also targets this PC), skip drawing here
+                // — mutual visuals are drawn in the enemy loop to compute a meeting point.
+                if (tgtUnit && String(tgtUnit).startsWith('EN')) {
+                    if (mutualPairs.has(tgtUnit + '::' + srcKey)) return;
+                }
+                // Determine color: if targeting an enemy with multiple attackers, only the highest-speed PC will be the active attacker
+                let color = '#fbbf24'; // amber default
+                if (tgtUnit && String(tgtUnit).startsWith('EN')) {
+                    // collect attackers for this enemy
+                    const attackers = Object.entries(GameState.pendingActions)
+                        .filter(([pId, act]) => {
+                            const raw = (act && typeof act === 'object') ? act.tgt : act;
+                            const resolved = GameState.abilityTargets[raw] || raw;
+                            return resolved === (GameState.abilityTargets[tgtVisual] || tgtVisual);
+                        }).map(([pId]) => pId);
+                    if (attackers.length > 1) {
+                        // pick highest-speed PC as real attacker
+                        let best = attackers[0];
+                        attackers.forEach(a => {
+                            const aspeed = GameState.units[a]?.speed || 0;
+                            const bspeed = GameState.units[best]?.speed || 0;
+                            if (aspeed > bspeed) best = a;
+                        });
+                        if (srcKey !== best) color = '#10b981'; // green for queued non-attacker
+                    }
+                }
+                const s = getCenter(srcIdForCenter);
+                const t = getCenter(tgtVisual);
+                if (s && t) drawArrow(s.x, s.y, t.x, t.y, color, true);
+        });
+
+        // Draw enemy planned actions (red dashed). If mutual engagement exists with a PC that targets the enemy, draw two arrows that meet.
+        Object.entries(GameState.enemyActions || {}).forEach(([enId, eAct]) => {
+            // skip dead enemies or plans with dead targets
+            const enUnit2 = GameState.units[enId];
+            const enTgtUnit2 = GameState.abilityTargets[eAct.tgt] || eAct.tgt;
+            const tgtUnit2 = GameState.units[enTgtUnit2];
+            if (!enUnit2 || enUnit2.hp <= 0) return;
+            if (!tgtUnit2 || tgtUnit2.hp <= 0) return;
+            const enSrcVisual = eAct.srcBoxId || enId;
+            const enTgtVisual = eAct.tgt;
+            const enSrcCenter = getCenter(enSrcVisual) || getCenter(enId);
+            const enTgtUnit = GameState.abilityTargets[enTgtVisual] || enTgtVisual;
+            const pcAction = GameState.pendingActions[enTgtUnit];
+            const pcSrcVisual = (pcAction && typeof pcAction === 'object') ? (pcAction.srcBoxId || enTgtUnit) : enTgtUnit;
+            const pcCenter = getCenter(pcSrcVisual) || getCenter(enTgtUnit);
+
+            if (enSrcCenter && pcCenter) {
+                // Mutual if that PC is targeting this enemy
+                let isMutual = false;
+                if (pcAction) {
+                    const raw = (typeof pcAction === 'object') ? pcAction.tgt : pcAction;
+                    const resolved = GameState.abilityTargets[raw] || raw;
+                    if (resolved === enId) isMutual = true;
+                }
+
+                if (isMutual) {
+                    // compute meeting point biased by relative roll strengths
+                    const pcStrength = Math.max(1, (GameState.units[enTgtUnit]?.ability?.rolls) || (GameState.units[enTgtUnit]?.ability?.rolls === 0 ? 1 : 1));
+                    const enStrength = Math.max(1, (GameState.units[enId]?.ability?.rolls) || (GameState.units[enId]?.ability?.rolls === 0 ? 1 : 1));
+                    const frac = pcStrength / (pcStrength + enStrength);
+                    const mx = pcCenter.x + frac * (enSrcCenter.x - pcCenter.x);
+                    const my = pcCenter.y + frac * (enSrcCenter.y - pcCenter.y);
+                    // To avoid overlapping arrowheads we shorten each arrow slightly so heads don't collide
+                    const headGap = 10; // px gap to avoid overlap
+                    // PC -> meeting (shortened)
+                    const anglePC = Math.atan2(my - pcCenter.y, mx - pcCenter.x);
+                    const pcEndX = mx - headGap * Math.cos(anglePC);
+                    const pcEndY = my - headGap * Math.sin(anglePC);
+                    drawArrow(pcCenter.x, pcCenter.y, pcEndX, pcEndY, '#fbbf24', true);
+                    // EN -> meeting (shortened from other side)
+                    const angleEN = Math.atan2(my - enSrcCenter.y, mx - enSrcCenter.x);
+                    const enEndX = mx - headGap * Math.cos(angleEN);
+                    const enEndY = my - headGap * Math.sin(angleEN);
+                    drawArrow(enSrcCenter.x, enSrcCenter.y, enEndX, enEndY, '#ef4444', true);
+                } else {
+                    // normal enemy arrow full-length
+                    drawArrow(enSrcCenter.x, enSrcCenter.y, pcCenter.x, pcCenter.y, '#ef4444', true);
+                }
+            }
         });
     }
 
@@ -746,13 +866,30 @@ async function resolveUnengagedEnemies() {
             const targets = Object.keys(GameState.units).filter(k => k.startsWith('PC') && GameState.units[k].hp > 0);
             if (targets.length === 0) break;
 
-            const tgtId = targets[Math.floor(Math.random() * targets.length)];
-            
+            // Prefer planned target if available and alive
+            let tgtId = null;
+            let visualTgt = null;
+            const planned = GameState.enemyActions && GameState.enemyActions[enId];
+            if (planned) {
+                visualTgt = planned.tgt;
+                const resolved = GameState.abilityTargets[visualTgt] || visualTgt;
+                if (resolved && GameState.units[resolved] && GameState.units[resolved].hp > 0) {
+                    tgtId = resolved;
+                }
+            }
+            if (!tgtId) {
+                // fallback to random living PC
+                tgtId = targets[Math.floor(Math.random() * targets.length)];
+                // attempt to use a PC ability-box as visual target
+                const pcBox = Object.keys(GameState.abilityTargets).find(k => GameState.abilityTargets[k] === tgtId);
+                visualTgt = pcBox || tgtId;
+            }
+
             document.getElementById(enId).classList.add('acting');
             // Prefer enemy ability-box as visual source if available
             const enBox = Object.keys(GameState.abilityTargets).find(k => GameState.abilityTargets[k] === enId);
             const visSrc = enBox || enId;
-            const vis = { src: visSrc, tgt: tgtId, color: '#ef4444' };
+            const vis = { src: visSrc, tgt: visualTgt || tgtId, color: '#ef4444' };
             GameState.visualActions.push(vis);
             await wait(800);
 
@@ -806,6 +943,30 @@ function generateUniqueSpeedsForPCs() {
     return { speeds, order };
 }
 
+// Roll unique d20 speeds for enemies and return { speeds, order }
+function generateUniqueSpeedsForEnemies() {
+    const enIds = Object.keys(GameState.units).filter(k => k.startsWith('EN') && GameState.units[k].hp > 0);
+    const speeds = {};
+    enIds.forEach(id => speeds[id] = 1 + Math.floor(Math.random() * 20));
+
+    function findDuplicates(map) {
+        const rev = {};
+        Object.entries(map).forEach(([id, v]) => { rev[v] = rev[v] || []; rev[v].push(id); });
+        return Object.values(rev).filter(arr => arr.length > 1);
+    }
+
+    let dups = findDuplicates(speeds);
+    while (dups.length > 0) {
+        dups.forEach(group => {
+            group.forEach(id => { speeds[id] = 1 + Math.floor(Math.random() * 20); });
+        });
+        dups = findDuplicates(speeds);
+    }
+
+    const order = enIds.slice().sort((a,b) => speeds[b] - speeds[a]);
+    return { speeds, order };
+}
+
 function rollUniqueSpeedsForPCs() {
     const { speeds, order } = generateUniqueSpeedsForPCs();
     Object.keys(speeds).forEach(id => { if (GameState.units[id]) GameState.units[id].speed = speeds[id]; });
@@ -813,6 +974,123 @@ function rollUniqueSpeedsForPCs() {
     const parts = order.map(id => `${GameState.units[id].name || id}(${speeds[id]})`);
     log(`Speed rolls: ${parts.join(' • ')}`, 'sys');
     log(`Turn order: ${order.map(id => GameState.units[id].name || id).join(' → ')}`, 'sys');
+}
+
+// Compute planned enemy actions: for each living enemy pick a living PC target and store visual ids
+function computePlannedEnemyActions(force = false) {
+    // If already have plans and not forcing, keep them (stable planning)
+    const existing = GameState.enemyActions || {};
+    const enemyIds = Object.keys(GameState.units).filter(k => k.startsWith('EN') && GameState.units[k].hp > 0);
+    const pcIds = (Array.isArray(GameState.turnOrder) && GameState.turnOrder.length>0)
+        ? GameState.turnOrder.filter(id => GameState.units[id] && GameState.units[id].hp>0)
+        : Object.keys(GameState.units).filter(k => k.startsWith('PC') && GameState.units[k].hp > 0);
+    if (enemyIds.length === 0 || pcIds.length === 0) { GameState.enemyActions = {}; return; }
+
+    if (!force && Object.keys(existing).length > 0) {
+        // fill missing entries only
+        enemyIds.forEach((enId, idx) => {
+            if (existing[enId]) return;
+            const tgtId = pcIds[idx % pcIds.length];
+            const enBox = Object.keys(GameState.abilityTargets).find(k => GameState.abilityTargets[k] === enId);
+            const pcBox = Object.keys(GameState.abilityTargets).find(k => GameState.abilityTargets[k] === tgtId);
+            existing[enId] = { srcBoxId: enBox || enId, tgt: pcBox || tgtId };
+        });
+        GameState.enemyActions = existing;
+        // Save baseline plans so enemies can revert when player undoes assignments
+        try { GameState.enemyBaseActions = JSON.parse(JSON.stringify(GameState.enemyActions || {})); } catch (e) { GameState.enemyBaseActions = Object.assign({}, GameState.enemyActions || {}); }
+        return;
+    }
+
+    // force or no existing plans: roll enemy speeds (secret) and map highest-speed enemies
+    // to lowest-HP PCs (1st -> lowest HP, 2nd -> 2nd lowest, etc.)
+    const { speeds: enSpeeds, order: enOrder } = generateUniqueSpeedsForEnemies();
+    // sort PCs by HP ascending
+    const pcByHp = pcIds.slice().sort((a,b) => (GameState.units[a].hp || 0) - (GameState.units[b].hp || 0));
+    const plans = {};
+    enOrder.forEach((enId, idx) => {
+        const tgtId = pcByHp[idx % pcByHp.length];
+        const enBox = Object.keys(GameState.abilityTargets).find(k => GameState.abilityTargets[k] === enId);
+        const pcBox = Object.keys(GameState.abilityTargets).find(k => GameState.abilityTargets[k] === tgtId);
+        plans[enId] = { srcBoxId: enBox || enId, tgt: pcBox || tgtId };
+    });
+    GameState.enemyActions = plans;
+    // Save baseline plans so enemies can revert when player undoes assignments
+    try { GameState.enemyBaseActions = JSON.parse(JSON.stringify(GameState.enemyActions || {})); } catch (e) { GameState.enemyBaseActions = Object.assign({}, GameState.enemyActions || {}); }
+}
+
+// Update enemy plans based on current pending player actions: if multiple PCs target same enemy,
+// the enemy will counter the highest-speed attacker; otherwise leave existing plan.
+function updateEnemyPlansFromPending() {
+    if (!GameState.enemyActions) GameState.enemyActions = {};
+    // Ensure baseline plans exist and capture them if missing
+    if (!GameState.enemyBaseActions || Object.keys(GameState.enemyBaseActions).length === 0) {
+        try { computePlannedEnemyActions(false); } catch (e) { /* ignore */ }
+        try { GameState.enemyBaseActions = JSON.parse(JSON.stringify(GameState.enemyActions || {})); } catch (e) { GameState.enemyBaseActions = Object.assign({}, GameState.enemyActions || {}); }
+    }
+
+    const enemyIds = Object.keys(GameState.units).filter(k => k.startsWith('EN') && GameState.units[k].hp > 0);
+    enemyIds.forEach(enId => {
+        // find all PCs targeting this enemy
+        const attackers = Object.entries(GameState.pendingActions)
+            .filter(([pId, act]) => {
+                const raw = (act && typeof act === 'object') ? act.tgt : act;
+                const resolved = GameState.abilityTargets[raw] || raw;
+                return resolved === enId;
+            }).map(([pId]) => pId);
+
+        if (attackers.length > 0) {
+            // choose highest-speed attacker; break ties with turnOrder
+            let best = attackers[0];
+            attackers.forEach(a => {
+                const as = GameState.units[a]?.speed || 0;
+                const bs = GameState.units[best]?.speed || 0;
+                if (as > bs) best = a;
+                else if (as === bs) {
+                    const to = GameState.turnOrder || [];
+                    const ai = to.indexOf(a), bi = to.indexOf(best);
+                    if (ai >= 0 && bi >= 0 && ai < bi) best = a;
+                }
+            });
+            const enBox = Object.keys(GameState.abilityTargets).find(k => GameState.abilityTargets[k] === enId);
+            const pcAct = GameState.pendingActions[best];
+            const pcVisual = (pcAct && typeof pcAct === 'object') ? (pcAct.srcBoxId || best) : best;
+            GameState.enemyActions[enId] = { srcBoxId: enBox || enId, tgt: pcVisual };
+        } else {
+            // no attackers: restore baseline plan if available, otherwise remove entry
+            if (GameState.enemyBaseActions && GameState.enemyBaseActions[enId]) {
+                GameState.enemyActions[enId] = JSON.parse(JSON.stringify(GameState.enemyBaseActions[enId]));
+            } else {
+                if (GameState.enemyActions && GameState.enemyActions[enId]) delete GameState.enemyActions[enId];
+            }
+        }
+    });
+}
+
+function undoLastAssignment() {
+    if (!GameState.assignmentOrder || GameState.assignmentOrder.length === 0) return;
+    const last = GameState.assignmentOrder.pop();
+    if (!last) return;
+    // last can be stored as { pcId, abilityBoxId } or just pcId in older edits
+    const pcId = (typeof last === 'string') ? last : (last.pcId || last);
+    // remove pending action for that PC
+    if (GameState.pendingActions && GameState.pendingActions[pcId]) {
+        delete GameState.pendingActions[pcId];
+    }
+    // remove visual markers
+    const pcCard = document.getElementById(pcId);
+    if (pcCard) {
+        const boxes = pcCard.querySelectorAll('.ability-box.assigned');
+        boxes.forEach(b => b.classList.remove('assigned'));
+    }
+    updateEnemyPlansFromPending();
+}
+
+function resetAssignments() {
+    GameState.assignmentOrder = [];
+    GameState.pendingActions = {};
+    // remove assigned classes from all ability boxes
+    document.querySelectorAll('.ability-box.assigned').forEach(el => el.classList.remove('assigned'));
+    updateEnemyPlansFromPending();
 }
 
 // Animate speed rolling for PCs: show rapid random numbers on badges, then set final speeds and animate reorder via FLIP.
@@ -873,6 +1151,9 @@ async function animateRollSpeeds(duration = 900) {
     // Animate reorder of player cards
     const pCon = document.getElementById('player-container');
     if (pCon) await flipReorder(pCon, order);
+
+    // After speeds and reorder are set, force enemy speed re-roll and compute planned enemy targets for the upcoming planning phase
+    try { computePlannedEnemyActions(true); } catch (e) { console.error('computePlannedEnemyActions error', e); }
 }
 
 // FLIP reorder animation: container element and array of ids (new order)
@@ -1000,6 +1281,8 @@ function checkDeaths() {
             }
         }
     });
+    // After resolving deaths, recompute planned enemy actions for updated unit lists
+    try { computePlannedEnemyActions(); } catch (e) { /* silent */ }
 }
 
 // Passive metadata definitions (looked up by name on units)
@@ -1173,6 +1456,10 @@ function handleDrop(e) {
             // Mark the source unit card as assigned
             const srcCard = document.getElementById(srcUnitId);
             if (srcCard) srcCard.classList.add('assigned');
+            // Track assignment order for undo
+            if (!GameState.assignmentOrder.includes(srcUnitId)) GameState.assignmentOrder.push(srcUnitId);
+            // Recompute enemy plans based on current pending actions: enemy will target the highest-speed attacker
+            try { updateEnemyPlansFromPending(); } catch (e) { console.error('updateEnemyPlansFromPending error', e); }
         }
     }
     GameState.dragStart = null;
@@ -1299,6 +1586,18 @@ function handleTouchEnd(e) {
             GameState.pendingActions[srcUnitId] = { srcBoxId: touchDragState.srcBoxId || null, tgt: tgtVisualId };
             const srcCard = document.getElementById(srcUnitId);
             if (srcCard) srcCard.classList.add('assigned');
+            // If this is a player attacking an enemy, make that enemy counter-target this PC (visual)
+            const parentId = GameState.abilityTargets[tgtVisualId];
+            const tgtUnit = GameState.units[parentId || tgtVisualId];
+            if (tgtUnit && tgtUnit.type === 'EN') {
+                try {
+                    if (!GameState.enemyActions) GameState.enemyActions = {};
+                    const enId = parentId || tgtVisualId;
+                    const enBox = Object.keys(GameState.abilityTargets).find(k => GameState.abilityTargets[k] === enId);
+                    const pcVisual = touchDragState.srcBoxId || srcUnitId;
+                    GameState.enemyActions[enId] = { srcBoxId: enBox || enId, tgt: pcVisual };
+                } catch (e) { console.error('set enemy counter error', e); }
+            }
         }
     }
     // Reset state
