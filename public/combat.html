@@ -94,6 +94,14 @@
         /* Toggle button animation */
         #controls-toggle { transition: transform 180ms cubic-bezier(.2,.9,.2,1), box-shadow 180ms ease; }
         #controls-toggle.btn-animate { transform: scale(1.06); box-shadow: 0 12px 30px rgba(15,23,42,0.6); }
+
+        /* Stagger card positions to reduce visual overlap between sides */
+        #player-container { padding-bottom: 24px; }
+        #player-container .unit-card:nth-child(odd) { margin-top: 10px; }
+        #player-container .unit-card:nth-child(even) { margin-top: 32px; }
+        #enemy-container { padding-bottom: 24px; }
+        #enemy-container .unit-card:nth-child(odd) { margin-top: 28px; }
+        #enemy-container .unit-card:nth-child(even) { margin-top: 8px; }
         #dialogue-speaker {
             color: #fbbf24; /* amber-400 */
             font-weight: 900;
@@ -479,24 +487,47 @@ function getCenter(id) {
 
 function drawArrow(x1, y1, x2, y2, color, dashed = false) {
     const head = 12;
-    const angle = Math.atan2(y2 - y1, x2 - x1);
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const dist = Math.hypot(dx, dy);
+
     ctx.strokeStyle = color;
     ctx.lineWidth = 4;
-    if (dashed) ctx.setLineDash([10, 10]);
-    else ctx.setLineDash([]);
+    ctx.setLineDash(dashed ? [10, 10] : []);
+
+    // Use a quadratic curve to arc upward; fallback to straight if very short
+    const useArc = dist > 16;
+    let cx = (x1 + x2) / 2;
+    let cy = (y1 + y2) / 2;
+    if (useArc) {
+        const nx = dist === 0 ? 0 : -dy / dist; // unit perpendicular (upward-ish)
+        const ny = dist === 0 ? 0 : dx / dist;
+        const curveHeight = Math.min(140, dist * 0.35);
+        const direction = -1; // bias arc upward on screen
+        cx += nx * curveHeight * direction;
+        cy += ny * curveHeight * direction;
+    }
+
+    ctx.beginPath();
+    if (useArc) {
+        ctx.moveTo(x1, y1);
+        ctx.quadraticCurveTo(cx, cy, x2, y2);
+    } else {
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+    }
     ctx.stroke();
-    
-    // Arrowhead
+
+    // Arrowhead: align with tangent at end of curve (or line)
+    const tanAngle = useArc ? Math.atan2(y2 - cy, x2 - cx) : Math.atan2(dy, dx);
     ctx.beginPath();
     ctx.moveTo(x2, y2);
-    ctx.lineTo(x2 - head * Math.cos(angle - Math.PI/6), y2 - head * Math.sin(angle - Math.PI/6));
-    ctx.lineTo(x2 - head * Math.cos(angle + Math.PI/6), y2 - head * Math.sin(angle + Math.PI/6));
+    ctx.lineTo(x2 - head * Math.cos(tanAngle - Math.PI / 6), y2 - head * Math.sin(tanAngle - Math.PI / 6));
+    ctx.lineTo(x2 - head * Math.cos(tanAngle + Math.PI / 6), y2 - head * Math.sin(tanAngle + Math.PI / 6));
     ctx.fillStyle = color;
     ctx.fill();
-    ctx.setLineDash([]); 
+
+    ctx.setLineDash([]);
 }
 
 function spawnFloatText(id, text, color) {
@@ -624,13 +655,13 @@ function animate() {
                     const mx = pcCenter.x + frac * (enSrcCenter.x - pcCenter.x);
                     const my = pcCenter.y + frac * (enSrcCenter.y - pcCenter.y);
                     // To avoid overlapping arrowheads we shorten each arrow slightly so heads don't collide
-                    const headGap = 10; // px gap to avoid overlap
-                    // PC -> meeting (shortened)
+                    const headGap = 0; // minimal gap so heads almost touch
+                    // PC -> meeting (shortened); head follows curve tangent automatically
                     const anglePC = Math.atan2(my - pcCenter.y, mx - pcCenter.x);
                     const pcEndX = mx - headGap * Math.cos(anglePC);
                     const pcEndY = my - headGap * Math.sin(anglePC);
                     drawArrow(pcCenter.x, pcCenter.y, pcEndX, pcEndY, '#fbbf24', true);
-                    // EN -> meeting (shortened from other side)
+                    // EN -> meeting (shortened from other side); head follows curve tangent automatically
                     const angleEN = Math.atan2(my - enSrcCenter.y, mx - enSrcCenter.x);
                     const enEndX = mx - headGap * Math.cos(angleEN);
                     const enEndY = my - headGap * Math.sin(angleEN);
