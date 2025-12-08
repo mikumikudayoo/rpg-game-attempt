@@ -35,6 +35,10 @@ app.get('/combat', (_req: Request, res: Response) => {
     res.sendFile(path.join(__dirname, 'public', 'combat.html'));
 });
 
+app.get('/combat.js', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'combat.js'));
+});
+
 app.post('/api/getDialogue', (req: Request, res: Response) => {
     // 1. Get and validate query parameters
     const chapterNum = Number(req.body.ch);
