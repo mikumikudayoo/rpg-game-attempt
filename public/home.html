@@ -1,31 +1,200 @@
-<html>
-    <body>
-        <h1>Welcome to Internet Explorers!</h1>
-        <p>Embark on an epic adventure.</p>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Internet Explorers – Home</title>
+	<script src="https://cdn.tailwindcss.com"></script>
+	<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+	<style>
+		:root {
+			--bg: linear-gradient(135deg, #0b1623 0%, #0f1c2c 40%, #0a0f1c 100%);
+			--card: rgba(15, 25, 40, 0.85);
+			--accent: #f59e0b;
+		}
+		* { font-family: 'Space Grotesk', system-ui, sans-serif; }
+		body { background: var(--bg); color: #e5e7eb; }
+		.glass { background: var(--card); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 25px 80px rgba(0,0,0,0.35); }
+		.grid-lines {
+			position: fixed;
+			inset: 0;
+			background-image: linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+			background-size: 48px 48px;
+			pointer-events: none;
+			z-index: 0;
+		}
+		.blob {
+			position: fixed;
+			width: 360px;
+			height: 360px;
+			border-radius: 9999px;
+			filter: blur(110px);
+			opacity: 0.4;
+			z-index: 0;
+		}
+		.blob.orange { background: #f59e0b; top: 10%; left: 4%; }
+		.blob.blue { background: #22d3ee; bottom: 8%; right: 6%; }
+		.tag { letter-spacing: 0.08em; font-size: 0.78rem; }
+		.btn { transition: transform 150ms ease, box-shadow 150ms ease; }
+		.btn:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(0,0,0,0.35); }
+		.input { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); }
+		.input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(245,158,11,0.25); }
+	</style>
+</head>
+<body class="min-h-screen relative">
+	<div class="grid-lines"></div>
+	<div class="blob orange"></div>
+	<div class="blob blue"></div>
 
-        <!-- login -->
-        <form method="post">
-            <label for="username">Username:</label>
-            <input type="text" id="username" name="username" required>
-            <br>
-            <label for="password">Password:</label>
-            <input type="password" id="password" name="password" required>
-            <br>
-            <button id="login-button">Login</button>
-        </form>
+	<div class="relative z-10">
+		<header class="max-w-6xl mx-auto px-6 pt-10 flex items-center justify-between">
+			<div class="flex items-center gap-3">
+				<div class="w-11 h-11 rounded-xl bg-amber-500 flex items-center justify-center text-slate-900 font-black text-xl shadow-lg">IE</div>
+				<div>
+					<div class="text-sm uppercase tracking-[0.3em] text-amber-300">Internet Explorers</div>
+					<div class="text-lg font-semibold text-slate-100">Gacha Tactics RPG</div>
+				</div>
+			</div>
+			<nav class="hidden md:flex items-center gap-6 text-slate-300 text-sm">
+				<a class="hover:text-white" href="#about">About</a>
+				<a class="hover:text-white" href="#features">Features</a>
+				<a class="hover:text-white" href="#auth">Access</a>
+			</nav>
+			<a href="#auth" class="btn bg-amber-500 text-slate-900 px-4 py-2 rounded-lg font-semibold shadow-lg">Play Now!</a>
+		</header>
 
-        <!-- signup -->
-        <form method="post">
-            <label for="new-username">Username:</label>
-            <input type="text" id="new-username" name="username" required>
-            <br>
-            <label for="new-password">Password:</label>
-            <input type="password" id="new-password" name="password" required>
-            <br>
-            <label for="confirm-password">Confirm Password:</label>
-            <input type="password" id="confirm-password" name="confirmPassword" required>
-            <br>
-            <button id="signup-button">Sign Up</button>
-        </form>
-    </body>
+		<main class="max-w-6xl mx-auto px-6 pb-16">
+			<section class="mt-12 grid lg:grid-cols-2 gap-10 items-center">
+				<div class="space-y-6">
+			<div class="inline-flex items-center gap-2 bg-amber-500/10 text-amber-300 px-3 py-2 rounded-full border border-amber-500/30 tag">PULL ABILITIES • BUILD TEAMS • CONQUER</div>
+			<h1 class="text-4xl sm:text-5xl lg:text-6xl font-semibold text-white leading-tight">Recruit legendary explorers and master adaptive tactics.</h1>
+			<p class="text-slate-300 text-lg leading-relaxed">Pull rare abilities to enhance your characters, build the perfect roster, and dominate tactical combat. Chain abilities, read enemy intent, and outplay the glitch-born bosses.</p>
+					<div class="flex flex-wrap gap-3">
+						<a href="#auth" class="btn bg-amber-500 text-slate-900 px-5 py-3 rounded-xl font-semibold shadow-lg">Log In / Sign Up</a>
+					</div>
+			<div class="grid sm:grid-cols-3 gap-3 text-sm text-slate-300">
+				<div class="glass rounded-xl p-3">
+					<div class="text-xl font-semibold text-white">Ability Pulls</div>
+					<div>Recruit rare abilities for your characters.</div>
+				</div>
+					<div class="glass rounded-xl p-3">
+						<div class="text-xl font-semibold text-white">Team Building</div>
+						<div>Synergies unlock when roles align perfectly.</div>
+					</div>
+					<div class="glass rounded-xl p-3">
+						<div class="text-xl font-semibold text-white">Progression</div>
+						<div>Level, evolve, and unlock hidden passives.</div>
+					</div>
+				</div>
+				</div>
+				<div class="glass rounded-2xl p-6 border border-white/10 shadow-2xl">
+				<div class="text-sm uppercase tracking-[0.2em] text-amber-300 mb-2" id="about">Build your dream team</div>
+				<h2 class="text-2xl font-semibold text-white mb-3">Collect, strategize, dominate.</h2>
+				<p class="text-slate-300 leading-relaxed mb-6">Curate a roster of powerful explorers, unlock synergies, and master tactical positioning. Every ability you pull unlocks fresh strategies on the battlefield.</p>
+					<div class="grid grid-cols-2 gap-3 text-sm text-slate-200">
+				<div class="rounded-xl border border-white/10 bg-white/5 p-3">
+					<div class="text-amber-300 text-xs mb-1">COLLECTION</div>
+					<div class="font-semibold text-white">Grow your roster</div>
+					<div class="text-slate-400">Unlock new abilities to expand team variety.</div>
+				</div>
+					<div class="rounded-xl border border-white/10 bg-white/5 p-3">
+						<div class="text-amber-300 text-xs mb-1">SYNERGIES</div>
+						<div class="font-semibold text-white">Role combos</div>
+						<div class="text-slate-400">Pair Tank, Healer, DPS for powerful effects.</div>
+					</div>
+					<div class="rounded-xl border border-white/10 bg-white/5 p-3">
+						<div class="text-amber-300 text-xs mb-1">LEVELING</div>
+						<div class="font-semibold text-white">Power up</div>
+						<div class="text-slate-400">Evolve characters to unlock new abilities.</div>
+					</div>
+					<div class="rounded-xl border border-white/10 bg-white/5 p-3">
+						<div class="text-amber-300 text-xs mb-1">ADAPTIVE AI</div>
+						<div class="font-semibold text-white">Smart enemies</div>
+						<div class="text-slate-400">Bosses adapt to your team composition.</div>
+					</div>
+					</div>
+				</div>
+			</section>
+
+		<section id="features" class="mt-16 grid lg:grid-cols-3 gap-6">
+		<div class="glass rounded-2xl p-6 border border-white/10">
+			<div class="text-amber-300 text-xs tracking-[0.25em] mb-2">ABILITY GACHA</div>
+			<h3 class="text-xl font-semibold text-white mb-2">Pull rare abilities</h3>
+			<p class="text-slate-300 text-sm leading-relaxed">Chase legendary 5-star abilities and customize your explorers. Every pull brings unique tactics to your team arsenal.</p>
+		</div>
+			<div class="glass rounded-2xl p-6 border border-white/10">
+				<div class="text-amber-300 text-xs tracking-[0.25em] mb-2">TACTICAL DEPTH</div>
+				<h3 class="text-xl font-semibold text-white mb-2">Plan & execute</h3>
+				<p class="text-slate-300 text-sm leading-relaxed">Strategize team positioning, predict enemy moves, and unleash ability chains in real-time combat.</p>
+			</div>
+			<div class="glass rounded-2xl p-6 border border-white/10">
+				<div class="text-amber-300 text-xs tracking-[0.25em] mb-2">PROGRESSION</div>
+				<h3 class="text-xl font-semibold text-white mb-2">Endless growth</h3>
+				<p class="text-slate-300 text-sm leading-relaxed">Level up characters, unlock new abilities, and hunt for limited-time events in the browser.</p>
+			</div>
+		</section>			<section id="auth" class="mt-16 grid lg:grid-cols-2 gap-6 items-start">
+				<div class="glass rounded-2xl p-6 border border-white/10">
+					<div class="flex items-center gap-2 mb-3">
+						<div class="w-10 h-10 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 font-semibold">1</div>
+						<div>
+							<div class="text-sm uppercase tracking-[0.18em] text-amber-300">Login</div>
+							<div class="text-xl font-semibold text-white">Jump back into your run</div>
+						</div>
+					</div>
+					<form class="space-y-4" onsubmit="event.preventDefault(); alert('Logged in (demo).');">
+						<div>
+							<label class="text-sm text-slate-300">Email</label>
+							<input required type="email" class="input w-full mt-1 px-3 py-3 rounded-xl" placeholder="you@example.com">
+						</div>
+						<div>
+							<label class="text-sm text-slate-300">Password</label>
+							<input required type="password" class="input w-full mt-1 px-3 py-3 rounded-xl" placeholder="••••••••">
+						</div>
+						<button type="submit" class="btn w-full bg-amber-500 text-slate-900 font-semibold py-3 rounded-xl shadow-lg">Log In</button>
+					</form>
+				</div>
+
+				<div class="glass rounded-2xl p-6 border border-white/10">
+					<div class="flex items-center gap-2 mb-3">
+						<div class="w-10 h-10 rounded-lg bg-emerald-400/20 border border-emerald-400/40 flex items-center justify-center text-emerald-200 font-semibold">2</div>
+						<div>
+					<div class="text-sm uppercase tracking-[0.18em] text-emerald-200">Sign Up</div>
+					<div class="text-xl font-semibold text-white">Claim your starter team</div>
+						</div>
+					</div>
+					<form class="space-y-4" onsubmit="event.preventDefault(); alert('Signed up (demo).');">
+						<div class="grid sm:grid-cols-2 gap-3">
+							<div>
+								<label class="text-sm text-slate-300">First name</label>
+								<input required type="text" class="input w-full mt-1 px-3 py-3 rounded-xl" placeholder="Ada">
+							</div>
+							<div>
+								<label class="text-sm text-slate-300">Last name</label>
+								<input required type="text" class="input w-full mt-1 px-3 py-3 rounded-xl" placeholder="Lovelace">
+							</div>
+						</div>
+						<div>
+							<label class="text-sm text-slate-300">Email</label>
+							<input required type="email" class="input w-full mt-1 px-3 py-3 rounded-xl" placeholder="crew@explorers.io">
+						</div>
+						<div>
+							<label class="text-sm text-slate-300">Password</label>
+							<input required type="password" class="input w-full mt-1 px-3 py-3 rounded-xl" placeholder="Create a password">
+						</div>
+						<button type="submit" class="btn w-full bg-white text-slate-900 font-semibold py-3 rounded-xl shadow-lg">Create Account</button>
+					</form>
+				</div>
+			</section>
+		</main>
+
+	<footer class="max-w-6xl mx-auto px-6 pb-10 mt-16 flex flex-col sm:flex-row items-center justify-between text-sm text-slate-400">
+		<div>© <span id="year"></span> Internet Explorers. Browser-native gacha RPG.</div>
+        <div class="mt-3 sm:mt-0">Made with ♥ by ninathedev</div>
+		</footer>
+	</div>
+
+	<script>
+		document.getElementById('year').innerText = new Date().getFullYear();
+	</script>
+</body>
 </html>

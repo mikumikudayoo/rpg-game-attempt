@@ -19,7 +19,7 @@ const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 app.use(express.json());
 
 //this is temporary until we set up proper routing
-app.use(express.static(path.join(process.cwd(), 'public')));
+//app.use(express.static(path.join(process.cwd(), 'public')));
 
 // Simple health check
 app.get('/health', (_req: Request, res: Response) => {
@@ -28,7 +28,11 @@ app.get('/health', (_req: Request, res: Response) => {
 
 // Example route
 app.get('/', (_req: Request, res: Response) => {
-    res.send('Hello from Express + TypeScript');
+    res.sendFile(path.join(__dirname, 'public', 'home.html'));
+});
+
+app.get('/combat', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'combat.html'));
 });
 
 app.post('/api/getDialogue', (req: Request, res: Response) => {
