@@ -1,27 +1,13 @@
 {
-    "dev_cookie_DO_NOT_USE": {
-        "description": "cookie gifts :3 they are like ego gifts from limbus company but instead of simply owning them, you have to use them on a specific character. every cookie gift CAN be used on every character. they are NOT consumed, they can be reused. the effect is just only applied to the character you use it on.",
-        "technical_explanation": "owo",
-        "effect": { }
-    },
-    "sukkar": {
-        "description": "wow you got a sukkar from forsaken!!!!",
-        "technical_explanation": "Increases max HP by 20 for the character equipped.",
-        "effect": { "maxHp": 20 }
-    },
-    "non crispy stick o": {
-        "description": "totally not worn out by sitting in a jar for so long",
-        "technical_explanation": "Increases damage by 5 for the character equipped.",
-        "effect": { "damage": 5 }
-    },
-    "cellphone from the guy in exit 8": {
-        "description": "I SWEAR HE DIDNT HAVE IT!! WHY DID WE GO FORWARD???",
-        "technical_explanation": "Reduces incoming damage by 3 for the character equipped.",
-        "effect": { "damageReduction": 3 }
-    },
-    "a coconut jpg file that when deleted will crash the game for some reason": {
-        "description": "dude i swear the devs are high or smth",
-        "technical_explanation": "Increases healing done by 4 for the character equipped.",
-        "effect": { "heal": 4 }
-    }
+    "Regeneration": { "type": "passive", "desc": "Heal 2 HP each turn", "func": "regeneration" },
+    "Fortify": { "type": "passive", "desc": "Reduce dmg by 1", "func": "fortify" },
+    "Power Strike": { "type": "ability", "desc": "+3 dmg", "func": "powerStrike" },
+    "Quick Step": { "type": "ability", "desc": "+1 speed", "func": "quickStep" },
+    "Lifesteal": { "type": "ability", "desc": "Heal on hit", "func": "lifesteal" },
+    "+10 HP": { "type": "stat", "desc": "Boost health", "func": "bonusHp" },
+    "+3 Damage": { "type": "stat", "desc": "Boost attack", "func": "bonusDamage" },
+    "Venomous": { "type": "ability", "desc": "Apply 2 Poison on hit", "func": "venomous" },
+    "Hemorrhage": { "type": "ability", "desc": "Apply 1 Bleed on hit", "func": "hemorrhage" },
+    "Searing": { "type": "ability", "desc": "Apply 2 Burn on hit", "func": "searing" },
+    "Rend": { "type": "ability", "desc": "Apply 1 Rupture on hit", "func": "rend" }
 }

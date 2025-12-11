@@ -39,6 +39,95 @@ app.get('/combat.js', (_req: Request, res: Response) => {
     res.sendFile(path.join(__dirname, 'public', 'combat.js'));
 });
 
+// API to get parameters
+app.get('/api/getParameters', (_req: Request, res: Response) => {
+    try {
+        const paramsPath = path.join(__dirname, 'static', 'params.json');
+        const paramsData = require(paramsPath);
+        return res.json({ parameters: paramsData });
+    } catch (e: any) {
+        if (e.code === 'MODULE_NOT_FOUND') {
+            return res.status(404).json({ error: 'Parameters file not found.' });
+        }
+        console.error('Error loading parameters:', e);
+        return res.status(500).json({ error: 'Failed to load parameters.' });
+    }
+});
+
+// API to get character data for a chapter
+app.get('/api/getUnits', (req: Request, res: Response) => {
+    const chapterNum = Number(req.query.ch) || 1;
+    
+    try {
+        // Load character data
+        const charsPath = path.join(__dirname, 'static', 'chars', `ch${chapterNum}.json`);
+        const charsData = require(charsPath);
+        
+        // Load character abilities
+        const charAbilitiesPath = path.join(__dirname, 'static', 'chars', 'abilities.json');
+        const charAbilities = require(charAbilitiesPath);
+        
+        // Load enemy data
+        const enemiesPath = path.join(__dirname, 'static', 'enemies', `ch${chapterNum}.json`);
+        const enemiesData = require(enemiesPath);
+        
+        // Load enemy abilities
+        const enemyAbilitiesPath = path.join(__dirname, 'static', 'enemies', 'abilities.json');
+        const enemyAbilities = require(enemyAbilitiesPath);
+        
+        // Load enemy passives
+        const passivesPath = path.join(__dirname, 'static', 'enemies', 'passives.json');
+        const passives = require(passivesPath);
+        
+        // Build PC data with resolved abilities
+        const PCs: Record<string, any> = {};
+        for (const [name, data] of Object.entries(charsData as Record<string, any>)) {
+            const abilityName = data.ability;
+            const abilityData = charAbilities[abilityName] || {};
+            PCs[name] = {
+                maxHp: data.maxHp,
+                role: data.role,
+                ability: {
+                    damage: abilityData.damage || 0,
+                    heal: abilityData.heal || 0,
+                    minroll: abilityData.minroll || 0,
+                    rolls: abilityData.rolls || 0,
+                    type: abilityData.type || "Adaptive",
+                    effect: abilityName
+                }
+            };
+        }
+        
+        // Build enemy data with resolved abilities and passives
+        const ENs: Record<string, any> = {};
+        for (const [name, data] of Object.entries(enemiesData as Record<string, any>)) {
+            const abilityName = data.ability;
+            const abilityData = enemyAbilities[abilityName] || {};
+            const passiveNames = Object.keys(data.passives || {});
+            ENs[name] = {
+                maxHp: data.maxHp,
+                name: data.name,
+                ability: {
+                    damage: abilityData.damage || 0,
+                    minroll: abilityData.minroll || 0,
+                    rolls: abilityData.rolls || 0,
+                    type: abilityData.type || "Rolling"
+                },
+                passives: passiveNames
+            };
+        }
+        
+        return res.json({ PCs, ENs, passives });
+        
+    } catch (e: any) {
+        if (e.code === 'MODULE_NOT_FOUND') {
+            return res.status(404).json({ error: `Chapter ${chapterNum} data not found.` });
+        }
+        console.error('Error loading unit data:', e);
+        return res.status(500).json({ error: 'Failed to load unit data.' });
+    }
+});
+
 app.post('/api/getDialogue', (req: Request, res: Response) => {
     // 1. Get and validate query parameters
     const chapterNum = Number(req.body.ch);

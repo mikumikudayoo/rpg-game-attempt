@@ -139,6 +139,55 @@ const StatusEffectFunctions = {
         if (!unit || !unit.statusEffects?.Vulnerable) return 1;
         const stacks = unit.statusEffects.Vulnerable;
         return 1 + (stacks * 0.2); // 20% increase per stack
+    },
+    
+    // Tick Bleed: Reduce stacks by 1 at turn end
+    tickBleed: (unitId) => {
+        const unit = GameState.units[unitId];
+        if (!unit || unit.hp <= 0 || !unit.statusEffects?.Bleed) return;
+        unit.statusEffects.Bleed = Math.max(0, unit.statusEffects.Bleed - 1);
+        if (unit.statusEffects.Bleed <= 0) {
+            delete unit.statusEffects.Bleed;
+            log(`${unit.name}'s bleed fades.`, 'sys');
+        }
+        updateStatusBadges(unitId);
+    },
+    
+    // Tick Rupture: Reduce stacks by 1 at turn end and reset accumulator
+    tickRupture: (unitId) => {
+        const unit = GameState.units[unitId];
+        if (!unit || unit.hp <= 0 || !unit.statusEffects?.Rupture) return;
+        unit.statusEffects.Rupture = Math.max(0, unit.statusEffects.Rupture - 1);
+        if (unit.statusEffects.Rupture <= 0) {
+            delete unit.statusEffects.Rupture;
+            unit.ruptureDamageAccum = 0;
+            log(`${unit.name}'s rupture fades.`, 'sys');
+        }
+        updateStatusBadges(unitId);
+    },
+    
+    // Tick Weaken: Reduce stacks by 1 at turn end
+    tickWeaken: (unitId) => {
+        const unit = GameState.units[unitId];
+        if (!unit || unit.hp <= 0 || !unit.statusEffects?.Weaken) return;
+        unit.statusEffects.Weaken = Math.max(0, unit.statusEffects.Weaken - 1);
+        if (unit.statusEffects.Weaken <= 0) {
+            delete unit.statusEffects.Weaken;
+            log(`${unit.name}'s weakness fades.`, 'sys');
+        }
+        updateStatusBadges(unitId);
+    },
+    
+    // Tick Vulnerable: Reduce stacks by 1 at turn end
+    tickVulnerable: (unitId) => {
+        const unit = GameState.units[unitId];
+        if (!unit || unit.hp <= 0 || !unit.statusEffects?.Vulnerable) return;
+        unit.statusEffects.Vulnerable = Math.max(0, unit.statusEffects.Vulnerable - 1);
+        if (unit.statusEffects.Vulnerable <= 0) {
+            delete unit.statusEffects.Vulnerable;
+            log(`${unit.name}'s vulnerability fades.`, 'sys');
+        }
+        updateStatusBadges(unitId);
     }
 };
 
@@ -208,32 +257,24 @@ function processStatusEffectsTurnStart() {
     });
 }
 
-// Process turn-end status effects (burn)
+// Process turn-end status effects (burn, bleed, rupture, weaken, vulnerable)
 function processStatusEffectsTurnEnd() {
     Object.keys(GameState.units).forEach(unitId => {
         const unit = GameState.units[unitId];
         if (unit && unit.hp > 0) {
             StatusEffectFunctions.tickBurn(unitId);
+            StatusEffectFunctions.tickBleed(unitId);
+            StatusEffectFunctions.tickRupture(unitId);
+            StatusEffectFunctions.tickWeaken(unitId);
+            StatusEffectFunctions.tickVulnerable(unitId);
         }
     });
 }
 
-// Parameter metadata definitions (looked up by name)
-const ParameterDefinitions = {
-    "Regeneration": { type: "passive", desc: "Heal 2 HP each turn", func: "regeneration" },
-    "Fortify": { type: "passive", desc: "Reduce dmg by 1", func: "fortify" },
-    "Power Strike": { type: "ability", desc: "+3 dmg", func: "powerStrike" },
-    "Quick Step": { type: "ability", desc: "+1 speed", func: "quickStep" },
-    "Lifesteal": { type: "ability", desc: "Heal on hit", func: "lifesteal" },
-    "+10 HP": { type: "stat", desc: "Boost health", func: "bonusHp" },
-    "+3 Damage": { type: "stat", desc: "Boost attack", func: "bonusDamage" },
-    "Venomous": { type: "ability", desc: "Apply 2 Poison on hit", func: "venomous" },
-    "Hemorrhage": { type: "ability", desc: "Apply 1 Bleed on hit", func: "hemorrhage" },
-    "Searing": { type: "ability", desc: "Apply 2 Burn on hit", func: "searing" },
-    "Rend": { type: "ability", desc: "Apply 1 Rupture on hit", func: "rend" }
-};
+// Parameter metadata definitions (will be populated from server)
+let ParameterDefinitions = {};
 
-// Parameter effect function registry (implementation layer)
+// Parameter effect function registry (implementation layer - these stay client-side as they contain logic)
 const ParameterFunctions = {
     regeneration: ({ unitId, trigger }) => {
         if (trigger === 'turnStart') {
@@ -324,13 +365,31 @@ const ParameterFunctions = {
     }
 };
 
-// List of available parameters (using name as id for server sync)
-const ParametersList = Object.keys(ParameterDefinitions).map(name => ({
-    id: name,
-    name: name,
-    type: ParameterDefinitions[name].type,
-    desc: ParameterDefinitions[name].desc
-}));
+// List of available parameters (will be populated from server)
+let ParametersList = [];
+
+// Fetch parameter definitions from server
+async function fetchParameters() {
+    try {
+        const res = await fetch('/api/getParameters');
+        if (!res.ok) throw new Error("Failed to fetch parameters");
+        const data = await res.json();
+        if (data.parameters) {
+            ParameterDefinitions = data.parameters;
+            // Build ParametersList from definitions
+            ParametersList = Object.keys(ParameterDefinitions).map(name => ({
+                id: name,
+                name: name,
+                type: ParameterDefinitions[name].type,
+                desc: ParameterDefinitions[name].desc
+            }));
+        }
+        return data;
+    } catch (e) {
+        console.error("Error fetching parameters:", e);
+        return null;
+    }
+}
 
 // Helper to trigger parameter effects on a unit
 function triggerParameterEffects(unitId, trigger, context = {}) {
@@ -355,21 +414,30 @@ function triggerParameterEffects(unitId, trigger, context = {}) {
     return result;
 }
 
-const UnitData = {
-    PCs: {
-        "Alpha": 	{ maxHp: 70, role: "Tank", 	ability: { damage: 4, 	heal: 0, minroll: 0, rolls: 4, type: "Adaptive", effect: "Sustain Protocol" } },
-        "Zenith": { maxHp: 45, role: "DPS", 	ability: { damage: 10, heal: 0, minroll: 0, rolls: 6, type: "Adaptive", effect: "Focused Fire" } },
-        "Poly": 	{ maxHp: 50, role: "AoE", 	ability: { damage: 6, 	heal: 0, minroll: 0, rolls: 4, type: "Adaptive", effect: "Chain Strike" } },
-        "Merui": 	{ maxHp: 60, role: "Healer",ability: { damage: 0, 	heal: 5, minroll: 0, rolls: 0, type: "Adaptive", effect: "Reconstruct" } },
-        "Locus": 	{ maxHp: 40, role: "DPS", 	ability: { damage: 7, 	heal: 0, minroll: 0, rolls: 5, type: "Adaptive", effect: "Quick Attack" } }
-    },
-    ENs: {
-        "Dagger": { maxHp: 15, name: "Dagger", ability: { damage: 5, 	minroll: 0, rolls: 3, type: "Rolling" }, passives: [] },
-        "Flare": 	{ maxHp: 12, name: "Flare", 	ability: { damage: 3, 	minroll: 0, rolls: 0, type: "Ignore" }, 	passives: [] },
-        "Mace": 	{ maxHp: 40, name: "Mace", 	ability: { damage: 8, 	minroll: 0, rolls: 4, type: "Rolling" }, passives: ["Aero-Mesh"] },
-        "Crawler":{ maxHp: 20, name: "Crawler",ability: { damage: 10, minroll: 0, rolls: 2, type: "Rolling" }, passives: [] }
-    }
+// UnitData will be populated from server
+let UnitData = {
+    PCs: {},
+    ENs: {}
 };
+
+// Fetch unit data from server
+async function fetchUnitData(chapter = 1) {
+    try {
+        const res = await fetch(`/api/getUnits?ch=${chapter}`);
+        if (!res.ok) throw new Error("Failed to fetch unit data");
+        const data = await res.json();
+        UnitData.PCs = data.PCs || {};
+        UnitData.ENs = data.ENs || {};
+        // Also update PassiveDefinitions from server if provided
+        if (data.passives) {
+            Object.assign(PassiveDefinitions, data.passives);
+        }
+        return data;
+    } catch (e) {
+        console.error("Error fetching unit data:", e);
+        return null;
+    }
+}
 
 let GameState = {
     units: {},
@@ -2122,15 +2190,24 @@ function updateParameterBadges(unitId) {
 }
 
 async function init() {
+    // Fetch unit data and parameters from server first
+    await Promise.all([
+        fetchUnitData(1),
+        fetchParameters()
+    ]);
+    
     const pCon = document.getElementById('player-container');
     const eCon = document.getElementById('enemy-container');
+    
+    // Create PC units from server data
     Object.entries(UnitData.PCs).forEach(([name, data], i) => {
         const id = `PC_${i}`;
         GameState.units[id] = { ...data, name, type: 'PC', hp: data.maxHp, id, parameters: [] };
         pCon.appendChild(createCard(GameState.units[id], id));
     });
-    const enemies = [{...UnitData.ENs.Dagger}, {...UnitData.ENs.Crawler}, {...UnitData.ENs.Flare}, {...UnitData.ENs.Mace}];
-    enemies.forEach((data, i) => {
+    
+    // Create enemy units from server data
+    Object.entries(UnitData.ENs).forEach(([name, data], i) => {
         const id = `EN_${i}`;
         GameState.units[id] = { ...data, type: 'EN', hp: data.maxHp, id, baseName: data.name, parameters: [] };
         eCon.appendChild(createCard(GameState.units[id], id));
