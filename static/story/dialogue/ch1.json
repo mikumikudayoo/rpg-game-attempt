@@ -4,7 +4,7 @@
             [
                 { "speaker": "bro", "text": "yo bro i found this cool game named \"internet explorers\"" },
                 { "speaker": "You", "text": "oh yeah? whats it about?" },
-                { "speaker": "bro", "text": "its this rpg where u fight off enemies and secure sectors of the internet" },
+                { "speaker": "bro", "text": "its this rpg where u fight off enemies from random fandoms" },
                 { "speaker": "You", "text": "cool!!" },
                 { "speaker": "narrator", "text": "u go to a browser and open up internet explorers" },
                 { "speaker": "you", "text": "its so cool that its all in a browser!!" },
@@ -31,20 +31,21 @@
                 { "speaker": "D.Y.L.A.N", "text": "basically just drag and drop. you will see an arrow from your character to the enemy you want to attack." },
                 { "speaker": "D.Y.L.A.N", "text": "if the character you selected is a healer, then instead of an enemy, you must select a teammate to heal." },
                 { "speaker": "D.Y.L.A.N", "text": "there is no need to use all of your characters, but be mindful! they can still be attacked by enemies." },
-                { "speaker": "D.Y.L.A.N", "text": "when you are done selecting, just press the big giant button you see." },
+                { "speaker": "D.Y.L.A.N", "text": "when you are done selecting, just open the menu on the bottom left and press initiate combat." },
                 { "speaker": "You", "text": "aight i think i can deal with that" },
                 { "speaker": "D.Y.L.A.N", "text": "great! lets go fight these guys!!" }
             ],
             [
                 { "speaker": "D.Y.L.A.N", "text": "yoo nice job bro" },
-                { "speaker": "You", "text": "dude i have a lot of questions, like what does rolling mean and what ignoring and stuff?" },
+                { "speaker": "You", "text": "dude i have a lot of questions, like what does rolling mean?" },
                 { "speaker": "D.Y.L.A.N", "text": "oh right i forgot about those, basically rolling means you roll a dice to determine if your character or enemy hits" },
                 { "speaker": "You", "text": "ohhhhhh" },
-                { "speaker": "D.Y.L.A.N", "text": "and ignoring means that the enemy just attacks you no matter what, so you have to trade damage with them" },
-                { "speaker": "You", "text": "dang thats rough" },
-                { "speaker": "D.Y.L.A.N", "text": "yeah tell me about it, but hey you did great for your first time!" },
+                { "speaker": "D.Y.L.A.N", "text": "you did great for your first time!" },
                 { "speaker": "You", "text": "i still have more questions tho" },
                 { "speaker": "D.Y.L.A.N", "text": "dont worry you will learn it as we go on, its like learning mandarin" },
+                { "speaker": "D.Y.L.A.N", "text": "but remember to check out what an enemy does by pressing on their info button." },
+                { "speaker": "D.Y.L.A.N", "text": "that way you can strategize better!" },
+                { "speaker": "You", "text": "aight bet" },
                 { "speaker": "D.Y.L.A.N", "text": "well let's move on to the next stage!!" }
             ]
         ]

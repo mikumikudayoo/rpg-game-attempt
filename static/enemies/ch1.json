@@ -1,5 +1,5 @@
 {
-    "Dagger":   { "maxHp": 15, "name": "Dagger",    "ability": "Dagger Flurry",   "passives": {} },
-    "Flare":    { "maxHp": 12, "name": "Flare",     "ability": "Flare Burst",     "passives": {} },
-    "Crawler":  { "maxHp": 20, "name": "Crawler",   "ability": "Rend Bite",       "passives": {} }
+    "Dagger":   { "maxHp": 15, "name": "Dagger",    "abilities": ["Dagger Flurry"],   "passives": {} },
+    "Flare":    { "maxHp": 12, "name": "Flare",     "abilities": ["Flare Burst"],     "passives": {} },
+    "Crawler":  { "maxHp": 20, "name": "Crawler",   "abilities": ["Rend Bite", "Crushing Swing"],       "passives": {} }
 }

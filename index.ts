@@ -575,9 +575,10 @@ app.get('/api/getParameters', (_req: Request, res: Response) => {
     }
 });
 
-// API to get character data for a chapter
+// API to get character data for a chapter and level
 app.get('/api/getUnits', (req: Request, res: Response) => {
     const chapterNum = Number(req.query.ch) || 1;
+    const levelNum = Number(req.query.lvl) || 1;
     
     try {
         // Load character data
@@ -588,9 +589,13 @@ app.get('/api/getUnits', (req: Request, res: Response) => {
         const charAbilitiesPath = path.join(__dirname, 'static', 'chars', 'abilities.json');
         const charAbilities = require(charAbilitiesPath);
         
-        // Load enemy data
+        // Load enemy definitions for this chapter
         const enemiesPath = path.join(__dirname, 'static', 'enemies', `ch${chapterNum}.json`);
         const enemiesData = require(enemiesPath);
+        
+        // Load level configuration (which enemies appear in each level)
+        const levelConfigPath = path.join(__dirname, 'static', 'story', 'enemy', `ch${chapterNum}.json`);
+        const levelConfig = require(levelConfigPath);
         
         // Load enemy abilities
         const enemyAbilitiesPath = path.join(__dirname, 'static', 'enemies', 'abilities.json');
@@ -619,26 +624,55 @@ app.get('/api/getUnits', (req: Request, res: Response) => {
             };
         }
         
-        // Build enemy data with resolved abilities and passives
+        // Find the level configuration
+        const levelData = levelConfig.levels.find((l: any) => l.level === levelNum);
+        if (!levelData) {
+            return res.status(404).json({ error: `Level ${levelNum} not found in chapter ${chapterNum}.` });
+        }
+        
+        // Build enemy data for this specific level
+        // Use unique keys for each enemy instance (e.g., "Dagger_0", "Dagger_1")
         const ENs: Record<string, any> = {};
-        for (const [name, data] of Object.entries(enemiesData as Record<string, any>)) {
-            const abilityName = data.ability;
-            const abilityData = enemyAbilities[abilityName] || {};
-            const passiveNames = Object.keys(data.passives || {});
-            ENs[name] = {
-                maxHp: data.maxHp,
-                name: data.name,
-                ability: {
+        const enemyCount: Record<string, number> = {};
+        
+        for (const enemyName of levelData.enemies) {
+            const enemyDef = enemiesData[enemyName];
+            if (!enemyDef) {
+                console.warn(`Enemy "${enemyName}" not found in chapter ${chapterNum} enemy definitions.`);
+                continue;
+            }
+            
+            // Track count for unique naming
+            enemyCount[enemyName] = (enemyCount[enemyName] || 0) + 1;
+            const uniqueKey = `${enemyName}_${enemyCount[enemyName]}`;
+            
+            // Support both single ability (legacy) and multiple abilities
+            const abilityNames = enemyDef.abilities || (enemyDef.ability ? [enemyDef.ability] : []);
+            const abilities = abilityNames.map((abilityName: string) => {
+                const abilityData = enemyAbilities[abilityName] || {};
+                return {
+                    name: abilityName,
                     damage: abilityData.damage || 0,
                     minroll: abilityData.minroll || 0,
                     rolls: abilityData.rolls || 0,
                     type: abilityData.type || "Rolling"
-                },
+                };
+            });
+            
+            const passiveNames = Object.keys(enemyDef.passives || {});
+            
+            ENs[uniqueKey] = {
+                maxHp: enemyDef.maxHp,
+                name: enemyDef.name,
+                // Keep 'ability' for backward compatibility (first ability)
+                ability: abilities[0] || { damage: 0, minroll: 0, rolls: 0, type: "Rolling" },
+                // Add 'abilities' array for multi-ability support
+                abilities: abilities,
                 passives: passiveNames
             };
         }
         
-        return res.json({ PCs, ENs, passives });
+        return res.json({ PCs, ENs, passives, chapter: chapterNum, level: levelNum });
         
     } catch (e: any) {
         if (e.code === 'MODULE_NOT_FOUND') {

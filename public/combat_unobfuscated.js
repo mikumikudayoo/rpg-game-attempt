@@ -420,10 +420,19 @@ let UnitData = {
     ENs: {}
 };
 
+// Get chapter and level from URL parameters
+function getUrlParams() {
+    const urlParams = new URLSearchParams(window.location.search);
+    return {
+        chapter: parseInt(urlParams.get('ch')) || 1,
+        level: parseInt(urlParams.get('lvl')) || 1
+    };
+}
+
 // Fetch unit data from server
-async function fetchUnitData(chapter = 1) {
+async function fetchUnitData(chapter = 1, level = 1) {
     try {
-        const res = await fetch(`/api/getUnits?ch=${chapter}`);
+        const res = await fetch(`/api/getUnits?ch=${chapter}&lvl=${level}`);
         if (!res.ok) throw new Error("Failed to fetch unit data");
         const data = await res.json();
         UnitData.PCs = data.PCs || {};
@@ -793,13 +802,15 @@ function animate() {
     if (GameState.phase === 'PLANNING') {
         // Clean out any plans for dead enemies or dead targets
         if (GameState.enemyActions) {
-            Object.keys(GameState.enemyActions).forEach(enId => {
-                const plan = GameState.enemyActions[enId];
+            Object.keys(GameState.enemyActions).forEach(boxId => {
+                const plan = GameState.enemyActions[boxId];
+                // boxId is now an ability box ID like "EN_0_AB_0"
+                const enId = GameState.abilityTargets[boxId] || boxId;
                 const enUnit = GameState.units[enId];
                 const tgtUnitId = GameState.abilityTargets[plan?.tgt] || plan?.tgt;
                 const tgtUnit = GameState.units[tgtUnitId];
                 if (!enUnit || enUnit.hp <= 0 || !tgtUnit || tgtUnit.hp <= 0) {
-                    delete GameState.enemyActions[enId];
+                    delete GameState.enemyActions[boxId];
                 }
             });
         }
@@ -809,8 +820,9 @@ function animate() {
         }
         // Draw player planned actions (skip those that will be drawn as mutual with enemies below)
         const mutualPairs = new Set();
-        Object.entries(GameState.enemyActions || {}).forEach(([enId, eAct]) => {
-            // skip dead enemies or plans with dead targets
+        Object.entries(GameState.enemyActions || {}).forEach(([boxId, eAct]) => {
+            // boxId is an ability box, get parent enemy
+            const enId = GameState.abilityTargets[boxId] || boxId;
             const enUnit = GameState.units[enId];
             let enTgtUnit = GameState.abilityTargets[eAct.tgt] || eAct.tgt;
             const tgtUnit = GameState.units[enTgtUnit];
@@ -818,12 +830,12 @@ function animate() {
             if (!tgtUnit || tgtUnit.hp <= 0) return;
             // resolve enemy's chosen target unit id
             enTgtUnit = GameState.abilityTargets[eAct.tgt] || eAct.tgt;
-            // if that PC has an action targeting this enemy, mark as mutual for that specific PC
+            // if that PC has an action targeting this specific ability box, mark as mutual
             const pcAction = GameState.pendingActions[enTgtUnit];
             if (pcAction) {
                 const raw = (typeof pcAction === 'object') ? pcAction.tgt : pcAction;
-                const resolved = GameState.abilityTargets[raw] || raw;
-                if (resolved === enId) mutualPairs.add(enId + '::' + enTgtUnit);
+                // Check if PC is targeting this specific ability box
+                if (raw === boxId) mutualPairs.add(boxId + '::' + enTgtUnit);
             }
         });
 
@@ -834,21 +846,20 @@ function animate() {
                 srcIdForCenter = action.srcBoxId || srcKey;
                 tgtVisual = action.tgt;
             }
-                const tgtUnit = GameState.abilityTargets[tgtVisual] || tgtVisual;
-                // If this pending action is mutual (enemy also targets this PC), skip drawing here
+                const tgtUnitId = GameState.abilityTargets[tgtVisual] || tgtVisual;
+                // If this pending action is mutual (enemy ability box also targets this PC), skip drawing here
                 // — mutual visuals are drawn in the enemy loop to compute a meeting point.
-                if (tgtUnit && String(tgtUnit).startsWith('EN')) {
-                    if (mutualPairs.has(tgtUnit + '::' + srcKey)) return;
+                if (tgtVisual && String(tgtVisual).includes('_AB_')) {
+                    if (mutualPairs.has(tgtVisual + '::' + srcKey)) return;
                 }
-                // Determine color: if targeting an enemy with multiple attackers, only the highest-speed PC will be the active attacker
+                // Determine color: if targeting same ability box with multiple attackers, only the highest-speed PC will be the active attacker
                 let color = '#fbbf24'; // amber default
-                if (tgtUnit && String(tgtUnit).startsWith('EN')) {
-                    // collect attackers for this enemy
+                if (tgtVisual && String(tgtVisual).includes('_AB_')) {
+                    // collect attackers for this specific ability box
                     const attackers = Object.entries(GameState.pendingActions)
                         .filter(([pId, act]) => {
                             const raw = (act && typeof act === 'object') ? act.tgt : act;
-                            const resolved = GameState.abilityTargets[raw] || raw;
-                            return resolved === (GameState.abilityTargets[tgtVisual] || tgtVisual);
+                            return raw === tgtVisual;
                         }).map(([pId]) => pId);
                     if (attackers.length > 1) {
                         // pick highest-speed PC as real attacker
@@ -866,24 +877,25 @@ function animate() {
                 if (s && t) drawArrow(s.x, s.y, t.x, t.y, color, true);
         });
 
-        // Draw enemy planned actions (red dashed). If mutual engagement exists with a PC that targets the enemy, draw two arrows that meet.
-        Object.entries(GameState.enemyActions || {}).forEach(([enId, eAct]) => {
-            // skip dead enemies or plans with dead targets
+        // Draw enemy planned actions (red dashed). If mutual engagement exists with a PC that targets the ability box, draw two arrows that meet.
+        Object.entries(GameState.enemyActions || {}).forEach(([boxId, eAct]) => {
+            // boxId is an ability box, get parent enemy
+            const enId = GameState.abilityTargets[boxId] || boxId;
             const enUnit2 = GameState.units[enId];
             const enTgtUnit2 = GameState.abilityTargets[eAct.tgt] || eAct.tgt;
             const tgtUnit2 = GameState.units[enTgtUnit2];
             if (!enUnit2 || enUnit2.hp <= 0) return;
             if (!tgtUnit2 || tgtUnit2.hp <= 0) return;
-            const enSrcVisual = eAct.srcBoxId || enId;
+            const enSrcVisual = eAct.srcBoxId || boxId;
             const enTgtVisual = eAct.tgt;
-            const enSrcCenter = getCenter(enSrcVisual) || getCenter(enId);
+            const enSrcCenter = getCenter(enSrcVisual) || getCenter(boxId);
             const enTgtUnit = GameState.abilityTargets[enTgtVisual] || enTgtVisual;
             const pcAction = GameState.pendingActions[enTgtUnit];
             const pcSrcVisual = (pcAction && typeof pcAction === 'object') ? (pcAction.srcBoxId || enTgtUnit) : enTgtUnit;
             const pcCenter = getCenter(pcSrcVisual) || getCenter(enTgtUnit);
 
             if (enSrcCenter && pcCenter) {
-                // Mutual if that PC is targeting this enemy
+                // Mutual if that PC is targeting this specific ability box
                 let isMutual = false;
                 if (pcAction) {
                     const raw = (typeof pcAction === 'object') ? pcAction.tgt : pcAction;
@@ -997,6 +1009,14 @@ async function resolveCombat() {
     const hasActions = Object.keys(GameState.pendingActions).length > 0;
     if (!hasActions) { log("No orders assigned! Press Initiate Combat when ready.", 'sys'); return; }
 
+    // Close the control panel
+    const panel = document.getElementById('control-panel');
+    const toggleBtn = document.getElementById('controls-toggle');
+    if (panel && !panel.classList.contains('panel-closed')) {
+        panel.classList.add('panel-closed');
+        if (toggleBtn) toggleBtn.innerText = '☰';
+    }
+
     const btn = document.getElementById('btn-turn');
     GameState.phase = 'EXECUTING';
     GameState.actedEnemies.clear();
@@ -1083,11 +1103,20 @@ async function resolveDuel(srcId, tgtId, visualTgtId = null, visualSrcId = null)
         return;
     }
     
+    // Determine which enemy ability to use based on the targeted ability box
+    let tgtAbility = tgt.ability; // default to first ability
+    if (visualTgtId && visualTgtId.includes('_AB_')) {
+        const abIdx = parseInt(visualTgtId.split('_AB_')[1]) || 0;
+        if (Array.isArray(tgt.abilities) && tgt.abilities[abIdx]) {
+            tgtAbility = tgt.abilities[abIdx];
+        }
+    }
+    
     // Visual Setup
     const vis = { src: visualSrcId || srcId, tgt: visualTgtId || tgtId, color: '#ffffff' };
     GameState.visualActions.push(vis);
     
-    const isRollingEnemy = (tgt.ability.type === 'Rolling');
+    const isRollingEnemy = (tgtAbility.type === 'Rolling');
     let pcHit = false;
     
     if (isRollingEnemy) {
@@ -1097,8 +1126,8 @@ async function resolveDuel(srcId, tgtId, visualTgtId = null, visualSrcId = null)
         // Use modified rolls
         const pcMin = src.ability.minroll ?? 0;
         const pcMax = src.ability.rolls ?? 0;
-        const enMin = tgt.ability.minroll ?? 0;
-        const enMax = tgt.ability.rolls ?? 0;
+        const enMin = tgtAbility.minroll ?? 0;
+        const enMax = tgtAbility.rolls ?? 0;
 
         const pcRoll = pcMin >= pcMax ? pcMin : pcMin + Math.floor(Math.random() * (pcMax - pcMin + 1));
         const enRoll = enMin >= enMax ? enMin : enMin + Math.floor(Math.random() * (enMax - enMin + 1));
@@ -1127,7 +1156,7 @@ async function resolveDuel(srcId, tgtId, visualTgtId = null, visualSrcId = null)
             document.getElementById(tgtId).classList.add('winner');
             document.getElementById(srcId).classList.add('loser');
 
-            await applyDamageWithIndicators(tgtId, srcId, tgt.ability.damage);
+            await applyDamageWithIndicators(tgtId, srcId, tgtAbility.damage);
             
             // Apply bleed damage based on roll difference
             StatusEffectFunctions.applyBleed(srcId, src.statusEffects?.Bleed || 0, rollDiff);
@@ -1139,7 +1168,7 @@ async function resolveDuel(srcId, tgtId, visualTgtId = null, visualSrcId = null)
             
             await applyDamageWithIndicators(srcId, tgtId, src.ability.damage);
 
-            await applyDamageWithIndicators(tgtId, srcId, tgt.ability.damage);
+            await applyDamageWithIndicators(tgtId, srcId, tgtAbility.damage);
 
             // Chain Logic in ties
             if (src.ability.effect === 'Chain Strike') await handleChain(srcId, tgtId);
@@ -1154,7 +1183,7 @@ async function resolveDuel(srcId, tgtId, visualTgtId = null, visualSrcId = null)
         
         await applyDamageWithIndicators(srcId, tgtId, src.ability.damage);
         
-        await applyDamageWithIndicators(tgtId, srcId, tgt.ability.damage);
+        await applyDamageWithIndicators(tgtId, srcId, tgtAbility.damage);
         
         if (src.ability.effect === 'Chain Strike') await handleChain(srcId, tgtId);
     }
@@ -1170,22 +1199,40 @@ async function resolveDuel(srcId, tgtId, visualTgtId = null, visualSrcId = null)
 }
 
 async function resolveUnengagedEnemies() {
-    const enemies = Object.keys(GameState.units).filter(k => k.startsWith('EN') && GameState.units[k].hp > 0);
-    const activeEnemies = enemies.filter(id => !GameState.actedEnemies.has(id));
+    // Find all unengaged enemy ability boxes (not engaged by players this turn)
+    const unengagedAbilityBoxes = Object.keys(GameState.abilityTargets).filter(boxId => {
+        const parentId = GameState.abilityTargets[boxId];
+        if (!parentId || !parentId.startsWith('EN')) return false;
+        const unit = GameState.units[parentId];
+        if (!unit || unit.hp <= 0) return false;
+        // Check if this ability box was engaged by any player action
+        const wasEngaged = Object.values(GameState.pendingActions).some(act => {
+            const raw = (act && typeof act === 'object') ? act.tgt : act;
+            return raw === boxId;
+        });
+        return !wasEngaged;
+    });
     
-    if (activeEnemies.length > 0) {
+    if (unengagedAbilityBoxes.length > 0) {
         document.getElementById('turn-indicator').innerText = "ENEMY TURN";
-        log("--- Unengaged Enemies Attacking ---", 'sys');
+        log("--- Unengaged Enemy Abilities Attacking ---", 'sys');
         
-        for (const enId of activeEnemies) {
+        for (const boxId of unengagedAbilityBoxes) {
+            const enId = GameState.abilityTargets[boxId];
             const en = GameState.units[enId];
+            if (!en || en.hp <= 0) continue;
+            
             const targets = Object.keys(GameState.units).filter(k => k.startsWith('PC') && GameState.units[k].hp > 0);
             if (targets.length === 0) break;
+
+            // Get the ability index from the box ID
+            const abIdx = parseInt(boxId.split('_AB_')[1]) || 0;
+            const ability = (Array.isArray(en.abilities) && en.abilities[abIdx]) ? en.abilities[abIdx] : en.ability;
 
             // Prefer planned target if available and alive
             let tgtId = null;
             let visualTgt = null;
-            const planned = GameState.enemyActions && GameState.enemyActions[enId];
+            const planned = GameState.enemyActions && GameState.enemyActions[boxId];
             if (planned) {
                 visualTgt = planned.tgt;
                 const resolved = GameState.abilityTargets[visualTgt] || visualTgt;
@@ -1202,15 +1249,13 @@ async function resolveUnengagedEnemies() {
             }
 
             document.getElementById(enId).classList.add('acting');
-            // Prefer enemy ability-box as visual source if available
-            const enBox = Object.keys(GameState.abilityTargets).find(k => GameState.abilityTargets[k] === enId);
-            const visSrc = enBox || enId;
-            const vis = { src: visSrc, tgt: visualTgt || tgtId, color: '#ef4444' };
+            const vis = { src: boxId, tgt: visualTgt || tgtId, color: '#ef4444' };
             GameState.visualActions.push(vis);
             await wait(800);
 
-            applyDamageWithIndicators(enId, tgtId, en.ability.damage);
-            log(`${en.name} free hit on ${GameState.units[tgtId].name}.`, 'dmg');
+            applyDamageWithIndicators(enId, tgtId, ability.damage);
+            const abilityName = ability.name || `A${abIdx + 1}`;
+            log(`${en.name} (${abilityName}) free hit on ${GameState.units[tgtId].name}.`, 'dmg');
             
             GameState.visualActions = GameState.visualActions.filter(v => v !== vis);
             document.getElementById(enId).classList.remove('acting');
@@ -1292,50 +1337,50 @@ function rollUniqueSpeedsForPCs() {
     log(`Turn order: ${order.map(id => GameState.units[id].name || id).join(' → ')}`, 'sys');
 }
 
-// Compute planned enemy actions: for each living enemy pick a living PC target and store visual ids
+// Compute planned enemy actions: for each enemy ability box, pick a living PC target
 function computePlannedEnemyActions(force = false) {
     // If already have plans and not forcing, keep them (stable planning)
     const existing = GameState.enemyActions || {};
-    const enemyIds = Object.keys(GameState.units).filter(k => k.startsWith('EN') && GameState.units[k].hp > 0);
+    
+    // Get all enemy ability boxes (not just enemy IDs)
+    const enemyAbilityBoxes = Object.keys(GameState.abilityTargets).filter(boxId => {
+        const parentId = GameState.abilityTargets[boxId];
+        return parentId && parentId.startsWith('EN') && GameState.units[parentId] && GameState.units[parentId].hp > 0;
+    });
+    
     const pcIds = (Array.isArray(GameState.turnOrder) && GameState.turnOrder.length>0)
         ? GameState.turnOrder.filter(id => GameState.units[id] && GameState.units[id].hp>0)
         : Object.keys(GameState.units).filter(k => k.startsWith('PC') && GameState.units[k].hp > 0);
-    if (enemyIds.length === 0 || pcIds.length === 0) { GameState.enemyActions = {}; return; }
+    
+    if (enemyAbilityBoxes.length === 0 || pcIds.length === 0) { GameState.enemyActions = {}; return; }
 
     if (!force && Object.keys(existing).length > 0) {
         // fill missing entries only
-        enemyIds.forEach((enId, idx) => {
-            if (existing[enId]) return;
+        enemyAbilityBoxes.forEach((boxId, idx) => {
+            if (existing[boxId]) return;
             const tgtId = pcIds[idx % pcIds.length];
-            const enBox = Object.keys(GameState.abilityTargets).find(k => GameState.abilityTargets[k] === enId);
             const pcBox = Object.keys(GameState.abilityTargets).find(k => GameState.abilityTargets[k] === tgtId);
-            existing[enId] = { srcBoxId: enBox || enId, tgt: pcBox || tgtId };
+            existing[boxId] = { srcBoxId: boxId, tgt: pcBox || tgtId };
         });
         GameState.enemyActions = existing;
-        // Save baseline plans so enemies can revert when player undoes assignments
         try { GameState.enemyBaseActions = JSON.parse(JSON.stringify(GameState.enemyActions || {})); } catch (e) { GameState.enemyBaseActions = Object.assign({}, GameState.enemyActions || {}); }
         return;
     }
 
-    // force or no existing plans: roll enemy speeds (secret) and map highest-speed enemies
-    // to lowest-HP PCs (1st -> lowest HP, 2nd -> 2nd lowest, etc.)
-    const { speeds: enSpeeds, order: enOrder } = generateUniqueSpeedsForEnemies();
-    // sort PCs by HP ascending
+    // force or no existing plans: distribute enemy ability boxes to target PCs by HP
     const pcByHp = pcIds.slice().sort((a,b) => (GameState.units[a].hp || 0) - (GameState.units[b].hp || 0));
     const plans = {};
-    enOrder.forEach((enId, idx) => {
+    enemyAbilityBoxes.forEach((boxId, idx) => {
         const tgtId = pcByHp[idx % pcByHp.length];
-        const enBox = Object.keys(GameState.abilityTargets).find(k => GameState.abilityTargets[k] === enId);
         const pcBox = Object.keys(GameState.abilityTargets).find(k => GameState.abilityTargets[k] === tgtId);
-        plans[enId] = { srcBoxId: enBox || enId, tgt: pcBox || tgtId };
+        plans[boxId] = { srcBoxId: boxId, tgt: pcBox || tgtId };
     });
     GameState.enemyActions = plans;
-    // Save baseline plans so enemies can revert when player undoes assignments
     try { GameState.enemyBaseActions = JSON.parse(JSON.stringify(GameState.enemyActions || {})); } catch (e) { GameState.enemyBaseActions = Object.assign({}, GameState.enemyActions || {}); }
 }
 
-// Update enemy plans based on current pending player actions: if multiple PCs target same enemy,
-// the enemy will counter the highest-speed attacker; otherwise leave existing plan.
+// Update enemy plans based on current pending player actions: if a PC targets an enemy ability box,
+// that ability box will counter the highest-speed attacker; otherwise leave existing plan.
 function updateEnemyPlansFromPending() {
     if (!GameState.enemyActions) GameState.enemyActions = {};
     // Ensure baseline plans exist and capture them if missing
@@ -1344,14 +1389,18 @@ function updateEnemyPlansFromPending() {
         try { GameState.enemyBaseActions = JSON.parse(JSON.stringify(GameState.enemyActions || {})); } catch (e) { GameState.enemyBaseActions = Object.assign({}, GameState.enemyActions || {}); }
     }
 
-    const enemyIds = Object.keys(GameState.units).filter(k => k.startsWith('EN') && GameState.units[k].hp > 0);
-    enemyIds.forEach(enId => {
-        // find all PCs targeting this enemy
+    // Get all enemy ability boxes
+    const enemyAbilityBoxes = Object.keys(GameState.abilityTargets).filter(boxId => {
+        const parentId = GameState.abilityTargets[boxId];
+        return parentId && parentId.startsWith('EN') && GameState.units[parentId] && GameState.units[parentId].hp > 0;
+    });
+    
+    enemyAbilityBoxes.forEach(boxId => {
+        // find all PCs targeting this specific ability box
         const attackers = Object.entries(GameState.pendingActions)
             .filter(([pId, act]) => {
                 const raw = (act && typeof act === 'object') ? act.tgt : act;
-                const resolved = GameState.abilityTargets[raw] || raw;
-                return resolved === enId;
+                return raw === boxId; // Match the specific ability box, not just the enemy
             }).map(([pId]) => pId);
 
         if (attackers.length > 0) {
@@ -1367,16 +1416,15 @@ function updateEnemyPlansFromPending() {
                     if (ai >= 0 && bi >= 0 && ai < bi) best = a;
                 }
             });
-            const enBox = Object.keys(GameState.abilityTargets).find(k => GameState.abilityTargets[k] === enId);
             const pcAct = GameState.pendingActions[best];
             const pcVisual = (pcAct && typeof pcAct === 'object') ? (pcAct.srcBoxId || best) : best;
-            GameState.enemyActions[enId] = { srcBoxId: enBox || enId, tgt: pcVisual };
+            GameState.enemyActions[boxId] = { srcBoxId: boxId, tgt: pcVisual };
         } else {
             // no attackers: restore baseline plan if available, otherwise remove entry
-            if (GameState.enemyBaseActions && GameState.enemyBaseActions[enId]) {
-                GameState.enemyActions[enId] = JSON.parse(JSON.stringify(GameState.enemyBaseActions[enId]));
+            if (GameState.enemyBaseActions && GameState.enemyBaseActions[boxId]) {
+                GameState.enemyActions[boxId] = JSON.parse(JSON.stringify(GameState.enemyBaseActions[boxId]));
             } else {
-                if (GameState.enemyActions && GameState.enemyActions[enId]) delete GameState.enemyActions[enId];
+                if (GameState.enemyActions && GameState.enemyActions[boxId]) delete GameState.enemyActions[boxId];
             }
         }
     });
@@ -1738,6 +1786,12 @@ function showGameOver(title, msg, colorClass) {
     modal.classList.remove('hidden');
 }
 
+// Navigate back to levels page
+window.goToLevels = function() {
+    const { chapter } = getUrlParams();
+    window.location.href = `/levels?ch=${chapter}`;
+};
+
 // ==========================================
 // 7. DRAG & DROP (Desktop & Mobile)
 // ==========================================
@@ -1911,19 +1965,24 @@ function handleTouchMove(e) {
 
     // Find element under touch point
     const elementAtPoint = document.elementFromPoint(touch.clientX, touch.clientY);
+    const abTarget = elementAtPoint?.closest('.ability-box');
     const targetCard = elementAtPoint?.closest('.unit-card');
+    
+    // Prefer ability box as target, fall back to card
+    const hoverTarget = abTarget || targetCard;
 
     // Remove hover from previous target
-    if (touchDragState.lastTarget && touchDragState.lastTarget !== targetCard) {
+    if (touchDragState.lastTarget && touchDragState.lastTarget !== hoverTarget) {
         touchDragState.lastTarget.classList.remove('target-hover');
         touchDragState.lastTarget = null;
     }
 
     // Add hover to current target if valid
-    if (targetCard && targetCard.id !== touchDragState.srcId) {
-        if (isValidDragTarget(touchDragState.srcId, targetCard.id)) {
-            targetCard.classList.add('target-hover');
-            touchDragState.lastTarget = targetCard;
+    if (hoverTarget) {
+        const tgtVisualId = abTarget ? abTarget.id : targetCard?.id;
+        if (tgtVisualId && isValidDragTarget(touchDragState.srcId, tgtVisualId)) {
+            hoverTarget.classList.add('target-hover');
+            touchDragState.lastTarget = hoverTarget;
         }
     }
 }
@@ -1947,18 +2006,10 @@ function handleTouchEnd(e) {
             GameState.pendingActions[srcUnitId] = { srcBoxId: touchDragState.srcBoxId || null, tgt: tgtVisualId };
             const srcCard = document.getElementById(srcUnitId);
             if (srcCard) srcCard.classList.add('assigned');
-            // If this is a player attacking an enemy, make that enemy counter-target this PC (visual)
-            const parentId = GameState.abilityTargets[tgtVisualId];
-            const tgtUnit = GameState.units[parentId || tgtVisualId];
-            if (tgtUnit && tgtUnit.type === 'EN') {
-                try {
-                    if (!GameState.enemyActions) GameState.enemyActions = {};
-                    const enId = parentId || tgtVisualId;
-                    const enBox = Object.keys(GameState.abilityTargets).find(k => GameState.abilityTargets[k] === enId);
-                    const pcVisual = touchDragState.srcBoxId || srcUnitId;
-                    GameState.enemyActions[enId] = { srcBoxId: enBox || enId, tgt: pcVisual };
-                } catch (e) { console.error('set enemy counter error', e); }
-            }
+            // Track assignment order for undo
+            if (!GameState.assignmentOrder.includes(srcUnitId)) GameState.assignmentOrder.push(srcUnitId);
+            // Recompute enemy plans based on current pending actions
+            try { updateEnemyPlansFromPending(); } catch (e) { console.error('updateEnemyPlansFromPending error', e); }
         }
     }
     // Reset state
@@ -2162,6 +2213,24 @@ function createCard(u, id) {
                 GameState.dragStart = getCenter(abId);
             };
         }
+        // Enemy ability boxes are valid drop targets
+        if (parentId.startsWith('EN_')) {
+            box.ondragover = function(ev) {
+                ev.preventDefault();
+                if (GameState.phase === 'PLANNING') {
+                    box.classList.add('target-hover');
+                }
+            };
+            box.ondragleave = function(ev) {
+                box.classList.remove('target-hover');
+            };
+            box.ondrop = function(ev) {
+                ev.preventDefault();
+                ev.stopPropagation(); // Prevent bubbling to parent card
+                handleDrop(ev);
+                box.classList.remove('target-hover');
+            };
+        }
     });
 
     return div;
@@ -2190,9 +2259,12 @@ function updateParameterBadges(unitId) {
 }
 
 async function init() {
+    // Get chapter and level from URL
+    const { chapter, level } = getUrlParams();
+    
     // Fetch unit data and parameters from server first
     await Promise.all([
-        fetchUnitData(1),
+        fetchUnitData(chapter, level),
         fetchParameters()
     ]);
     

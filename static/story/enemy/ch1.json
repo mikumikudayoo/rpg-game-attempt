@@ -1,0 +1,16 @@
+{
+    "levels": [
+        {
+            "level": 1,
+            "enemies": ["Dagger", "Dagger", "Dagger", "Dagger"]
+        },
+        {
+            "level": 2,
+            "enemies": ["Flare", "Flare", "Flare", "Flare"]
+        },
+        {
+            "level": 3,
+            "enemies": ["Crawler"]
+        }
+    ]
+}
