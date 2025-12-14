@@ -1,6 +1,11 @@
 import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import * as path from 'path';
+import { MongoClient, Db, ObjectId } from 'mongodb';
+import dotenv from 'dotenv';
+
+// Load environment variables from .env file
+dotenv.config();
 
 // Define the expected structure for clarity
 interface DialogueLine {
@@ -12,8 +17,71 @@ interface ChapterDialogue {
     dialogue: DialoguePair[];
 }
 
+// Account interface for MongoDB
+interface ChapterProgress {
+    unlocked: boolean;
+    completed: boolean;
+    currentLevel: number; // Highest level unlocked (1-based)
+    levelsCompleted: number; // Total levels completed in this chapter
+    totalLevels: number; // Total number of levels in this chapter
+    savedProgress: {
+        level: number;
+        battleIndex: number;
+        pcHealth: Record<string, number>;
+        enemiesDefeated: string[];
+        savedAt: Date;
+    } | null;
+    characterLevels: [number, number, number, number, number];
+    inventory: {
+        currency: number;
+        pulls: number;
+        unlockedAbilities: string[];
+    };
+}
+
+interface Account {
+    _id?: ObjectId;
+    username: string;
+    email: string;
+    passwordHash: string;
+    createdAt: Date;
+    lastLogin: Date;
+    chapters: Record<string, ChapterProgress>;
+    currentChapter: number;
+    stats: {
+        totalBattles: number;
+        wins: number;
+        losses: number;
+        totalDamageDealt: number;
+        totalHealingDone: number;
+    };
+    settings: {
+        soundEnabled: boolean;
+        musicVolume: number;
+        sfxVolume: number;
+        autoSpeed: number;
+    };
+}
+
 const app = express();
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
+
+// MongoDB connection
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017';
+const DB_NAME = process.env.DB_NAME || 'internet_explorers';
+let db: Db;
+
+async function connectToMongo() {
+    try {
+        const client = new MongoClient(MONGO_URI);
+        await client.connect();
+        db = client.db(DB_NAME);
+        console.log(`Connected to MongoDB: ${DB_NAME}`);
+    } catch (error) {
+        console.error('Failed to connect to MongoDB:', error);
+        process.exit(1);
+    }
+}
 
 // Middleware
 app.use(express.json());
@@ -26,9 +94,462 @@ app.get('/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Example route
+// ==================== ACCOUNT API ROUTES ====================
+
+// Register a new account
+app.post('/api/accounts/register', async (req: Request, res: Response) => {
+    try {
+        const { username, email, password } = req.body;
+        
+        if (!username || !email || !password) {
+            return res.status(400).json({ error: 'Username, email, and password are required.' });
+        }
+        
+        // Check if username or email already exists
+        const existing = await db.collection<Account>('accounts').findOne({
+            $or: [{ username }, { email }]
+        });
+        
+        if (existing) {
+            return res.status(409).json({ error: 'Username or email already exists.' });
+        }
+        
+        // In production, use bcrypt to hash the password
+        // For now, we'll store a placeholder (DO NOT use in production)
+        const newAccount: Account = {
+            username,
+            email,
+            passwordHash: `hashed_${password}`, // Replace with bcrypt.hash(password, 10)
+            createdAt: new Date(),
+            lastLogin: new Date(),
+            chapters: {
+                "1": {
+                    unlocked: true,
+                    completed: false,
+                    currentLevel: 1,
+                    levelsCompleted: 0,
+                    totalLevels: 10,
+                    savedProgress: null,
+                    characterLevels: [1, 1, 1, 1, 1],
+                    inventory: {
+                        currency: 1000,
+                        pulls: 10,
+                        unlockedAbilities: []
+                    }
+                }
+            },
+            currentChapter: 1,
+            stats: {
+                totalBattles: 0,
+                wins: 0,
+                losses: 0,
+                totalDamageDealt: 0,
+                totalHealingDone: 0
+            },
+            settings: {
+                soundEnabled: true,
+                musicVolume: 0.8,
+                sfxVolume: 1.0,
+                autoSpeed: 1
+            }
+        };
+        
+        const result = await db.collection<Account>('accounts').insertOne(newAccount);
+        return res.status(201).json({ 
+            message: 'Account created successfully.',
+            accountId: result.insertedId 
+        });
+    } catch (error) {
+        console.error('Registration error:', error);
+        return res.status(500).json({ error: 'Failed to create account.' });
+    }
+});
+
+// Login
+app.post('/api/accounts/login', async (req: Request, res: Response) => {
+    try {
+        const { username, password } = req.body;
+        
+        if (!username || !password) {
+            return res.status(400).json({ error: 'Username and password are required.' });
+        }
+        
+        const account = await db.collection<Account>('accounts').findOne({ username });
+        
+        if (!account) {
+            return res.status(401).json({ error: 'Invalid username or password.' });
+        }
+        
+        // In production, use bcrypt.compare(password, account.passwordHash)
+        if (account.passwordHash !== `hashed_${password}`) {
+            return res.status(401).json({ error: 'Invalid username or password.' });
+        }
+        
+        // Update last login
+        await db.collection<Account>('accounts').updateOne(
+            { _id: account._id },
+            { $set: { lastLogin: new Date() } }
+        );
+        
+        // Return account data (excluding password hash)
+        const { passwordHash, ...safeAccount } = account;
+        return res.json({ 
+            message: 'Login successful.',
+            account: safeAccount 
+        });
+    } catch (error) {
+        console.error('Login error:', error);
+        return res.status(500).json({ error: 'Login failed.' });
+    }
+});
+
+// Get account by username
+app.get('/api/accounts/:username', async (req: Request, res: Response) => {
+    try {
+        const { username } = req.params;
+        const account = await db.collection<Account>('accounts').findOne({ username });
+        
+        if (!account) {
+            return res.status(404).json({ error: 'Account not found.' });
+        }
+        
+        // Return account data (excluding password hash)
+        const { passwordHash, ...safeAccount } = account;
+        return res.json({ account: safeAccount });
+    } catch (error) {
+        console.error('Get account error:', error);
+        return res.status(500).json({ error: 'Failed to retrieve account.' });
+    }
+});
+
+// Update account progress (chapter-based)
+app.patch('/api/accounts/:username/progress', async (req: Request, res: Response) => {
+    try {
+        const { username } = req.params;
+        const { chapter, currentChapter, completed, savedProgress } = req.body;
+        
+        const updateObj: any = {};
+        
+        // Update current chapter globally
+        if (currentChapter !== undefined) {
+            updateObj['currentChapter'] = currentChapter;
+        }
+        
+        // Update specific chapter data
+        if (chapter !== undefined) {
+            const chapterKey = String(chapter);
+            
+            if (completed !== undefined) {
+                updateObj[`chapters.${chapterKey}.completed`] = completed;
+                
+                // If completing a chapter, unlock the next one
+                if (completed === true) {
+                    const nextChapter = String(chapter + 1);
+                    updateObj[`chapters.${nextChapter}.unlocked`] = true;
+                    // Initialize next chapter if it doesn't exist
+                    updateObj[`chapters.${nextChapter}.completed`] = { $ifNull: [`$chapters.${nextChapter}.completed`, false] };
+                }
+            }
+            
+            if (savedProgress !== undefined) {
+                if (savedProgress === null) {
+                    updateObj[`chapters.${chapterKey}.savedProgress`] = null;
+                } else {
+                    updateObj[`chapters.${chapterKey}.savedProgress`] = {
+                        ...savedProgress,
+                        savedAt: new Date()
+                    };
+                }
+            }
+        }
+        
+        if (Object.keys(updateObj).length === 0) {
+            return res.status(400).json({ error: 'No progress updates provided.' });
+        }
+        
+        const result = await db.collection<Account>('accounts').updateOne(
+            { username },
+            { $set: updateObj }
+        );
+        
+        if (result.matchedCount === 0) {
+            return res.status(404).json({ error: 'Account not found.' });
+        }
+        
+        return res.json({ message: 'Progress updated successfully.' });
+    } catch (error) {
+        console.error('Update progress error:', error);
+        return res.status(500).json({ error: 'Failed to update progress.' });
+    }
+});
+
+// Get level progress for a specific chapter
+app.get('/api/accounts/:username/levels/:chapter', async (req: Request, res: Response) => {
+    try {
+        const { username, chapter } = req.params;
+        const chapterKey = String(chapter);
+        const chapterNum = parseInt(chapter || '1');
+        
+        const account = await db.collection<Account>('accounts').findOne({ username });
+        
+        if (!account) {
+            return res.status(404).json({ error: 'Account not found.' });
+        }
+        
+        const chapterData = account.chapters[chapterKey];
+        
+        if (!chapterData) {
+            return res.status(404).json({ error: 'Chapter not found or not unlocked.' });
+        }
+        
+        return res.json({
+            chapter: chapterNum,
+            unlocked: chapterData.unlocked,
+            currentLevel: chapterData.currentLevel || 1,
+            levelsCompleted: chapterData.levelsCompleted || 0,
+            totalLevels: chapterData.totalLevels || 10
+        });
+    } catch (error) {
+        console.error('Get level progress error:', error);
+        return res.status(500).json({ error: 'Failed to get level progress.' });
+    }
+});
+
+// Complete a level - unlocks the next level
+app.post('/api/accounts/:username/levels/:chapter/:level/complete', async (req: Request, res: Response) => {
+    try {
+        const { username, chapter, level } = req.params;
+        const chapterKey = String(chapter);
+        const chapterNum = parseInt(chapter || '1');
+        const levelNum = parseInt(level || '1');
+        
+        const account = await db.collection<Account>('accounts').findOne({ username });
+        
+        if (!account) {
+            return res.status(404).json({ error: 'Account not found.' });
+        }
+        
+        const chapterData = account.chapters[chapterKey];
+        
+        if (!chapterData || !chapterData.unlocked) {
+            return res.status(403).json({ error: 'Chapter not unlocked.' });
+        }
+        
+        const currentLevel = chapterData.currentLevel || 1;
+        const totalLevels = chapterData.totalLevels || 10;
+        
+        // Only allow completing the current level or earlier (replaying)
+        if (levelNum > currentLevel) {
+            return res.status(403).json({ error: 'Level not unlocked yet.' });
+        }
+        
+        const updateObj: any = {};
+        
+        // If completing a new level (not replaying)
+        if (levelNum === currentLevel) {
+            updateObj[`chapters.${chapterKey}.levelsCompleted`] = levelNum;
+            
+            // If there are more levels, unlock the next one
+            if (levelNum < totalLevels) {
+                updateObj[`chapters.${chapterKey}.currentLevel`] = levelNum + 1;
+            } else {
+                // Chapter completed!
+                updateObj[`chapters.${chapterKey}.completed`] = true;
+                
+                // Unlock next chapter
+                const nextChapterKey = String(chapterNum + 1);
+                updateObj[`chapters.${nextChapterKey}`] = {
+                    unlocked: true,
+                    completed: false,
+                    currentLevel: 1,
+                    levelsCompleted: 0,
+                    totalLevels: getChapterLevelCount(chapterNum + 1),
+                    savedProgress: null,
+                    characterLevels: [1, 1, 1, 1, 1],
+                    inventory: {
+                        currency: 1000,
+                        pulls: 10,
+                        unlockedAbilities: []
+                    }
+                };
+            }
+        }
+        
+        // Update stats
+        updateObj['stats.totalBattles'] = (account.stats?.totalBattles || 0) + 1;
+        updateObj['stats.wins'] = (account.stats?.wins || 0) + 1;
+        
+        await db.collection<Account>('accounts').updateOne(
+            { username },
+            { $set: updateObj }
+        );
+        
+        const isChapterComplete = levelNum >= totalLevels;
+        const nextLevel = levelNum < totalLevels ? levelNum + 1 : null;
+        
+        return res.json({
+            message: 'Level completed!',
+            levelCompleted: levelNum,
+            nextLevel,
+            chapterCompleted: isChapterComplete,
+            nextChapterUnlocked: isChapterComplete ? chapterNum + 1 : null
+        });
+    } catch (error) {
+        console.error('Complete level error:', error);
+        return res.status(500).json({ error: 'Failed to complete level.' });
+    }
+});
+
+// Helper function to get the number of levels per chapter
+function getChapterLevelCount(chapter: number): number {
+    const levelCounts: Record<number, number> = {
+        1: 10,
+        2: 12,
+        3: 10,
+        4: 8,
+        5: 10,
+        6: 12,
+        7: 10,
+        8: 15,
+        9: 10,
+        10: 20
+    };
+    return levelCounts[chapter] || 10;
+}
+
+// Update account stats (after battle)
+app.patch('/api/accounts/:username/stats', async (req: Request, res: Response) => {
+    try {
+        const { username } = req.params;
+        const { won, damageDealt, healingDone } = req.body;
+        
+        const incObj: any = {
+            'stats.totalBattles': 1
+        };
+        
+        if (won === true) {
+            incObj['stats.wins'] = 1;
+        } else if (won === false) {
+            incObj['stats.losses'] = 1;
+        }
+        
+        if (damageDealt) {
+            incObj['stats.totalDamageDealt'] = damageDealt;
+        }
+        
+        if (healingDone) {
+            incObj['stats.totalHealingDone'] = healingDone;
+        }
+        
+        const result = await db.collection<Account>('accounts').updateOne(
+            { username },
+            { $inc: incObj }
+        );
+        
+        if (result.matchedCount === 0) {
+            return res.status(404).json({ error: 'Account not found.' });
+        }
+        
+        return res.json({ message: 'Stats updated successfully.' });
+    } catch (error) {
+        console.error('Update stats error:', error);
+        return res.status(500).json({ error: 'Failed to update stats.' });
+    }
+});
+
+// Update chapter inventory (currency, pulls, abilities)
+app.patch('/api/accounts/:username/inventory', async (req: Request, res: Response) => {
+    try {
+        const { username } = req.params;
+        const { chapter, currencyDelta, pullsDelta, newAbility } = req.body;
+        
+        if (chapter === undefined) {
+            return res.status(400).json({ error: 'Chapter number is required.' });
+        }
+        
+        const chapterKey = String(chapter);
+        const updateOps: any = {};
+        
+        if (currencyDelta !== undefined || pullsDelta !== undefined) {
+            updateOps.$inc = {};
+            if (currencyDelta !== undefined) {
+                updateOps.$inc[`chapters.${chapterKey}.inventory.currency`] = currencyDelta;
+            }
+            if (pullsDelta !== undefined) {
+                updateOps.$inc[`chapters.${chapterKey}.inventory.pulls`] = pullsDelta;
+            }
+        }
+        
+        if (newAbility) {
+            updateOps.$addToSet = { [`chapters.${chapterKey}.inventory.unlockedAbilities`]: newAbility };
+        }
+        
+        if (Object.keys(updateOps).length === 0) {
+            return res.status(400).json({ error: 'No inventory updates provided.' });
+        }
+        
+        const result = await db.collection<Account>('accounts').updateOne(
+            { username },
+            updateOps
+        );
+        
+        if (result.matchedCount === 0) {
+            return res.status(404).json({ error: 'Account not found.' });
+        }
+        
+        return res.json({ message: 'Inventory updated successfully.' });
+    } catch (error) {
+        console.error('Update inventory error:', error);
+        return res.status(500).json({ error: 'Failed to update inventory.' });
+    }
+});
+
+// Update account settings
+app.patch('/api/accounts/:username/settings', async (req: Request, res: Response) => {
+    try {
+        const { username } = req.params;
+        const { soundEnabled, musicVolume, sfxVolume, autoSpeed } = req.body;
+        
+        const updateObj: any = {};
+        
+        if (soundEnabled !== undefined) updateObj['settings.soundEnabled'] = soundEnabled;
+        if (musicVolume !== undefined) updateObj['settings.musicVolume'] = musicVolume;
+        if (sfxVolume !== undefined) updateObj['settings.sfxVolume'] = sfxVolume;
+        if (autoSpeed !== undefined) updateObj['settings.autoSpeed'] = autoSpeed;
+        
+        if (Object.keys(updateObj).length === 0) {
+            return res.status(400).json({ error: 'No settings updates provided.' });
+        }
+        
+        const result = await db.collection<Account>('accounts').updateOne(
+            { username },
+            { $set: updateObj }
+        );
+        
+        if (result.matchedCount === 0) {
+            return res.status(404).json({ error: 'Account not found.' });
+        }
+        
+        return res.json({ message: 'Settings updated successfully.' });
+    } catch (error) {
+        console.error('Update settings error:', error);
+        return res.status(500).json({ error: 'Failed to update settings.' });
+    }
+});
+
+// ==================== END ACCOUNT API ROUTES ====================
+
+// Page routes
 app.get('/', (_req: Request, res: Response) => {
     res.sendFile(path.join(__dirname, 'public', 'home.html'));
+});
+
+app.get('/chapters', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'chapters.html'));
+});
+
+app.get('/levels', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'levels.html'));
 });
 
 app.get('/combat', (_req: Request, res: Response) => {
@@ -204,6 +725,7 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     res.status(500).json({ error: message });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
+    await connectToMongo();
     console.log(`Server listening on http://localhost:${PORT}`);
 });

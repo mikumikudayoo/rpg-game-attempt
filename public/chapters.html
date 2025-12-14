@@ -36,23 +36,26 @@
         .blob.blue { background: #22d3ee; bottom: 8%; right: 6%; }
         .chapter-card {
             transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
+            cursor: pointer;
         }
-        .chapter-card:hover {
+        .chapter-card:not(.locked):hover {
             transform: translateY(-4px) scale(1.02);
             box-shadow: 0 20px 40px rgba(0,0,0,0.4);
             border-color: rgba(245, 158, 11, 0.5);
         }
         .chapter-card.locked {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-        .chapter-card.locked:hover {
-            transform: none;
-            box-shadow: none;
-            border-color: rgba(255,255,255,0.08);
+            opacity: 0.6;
+            cursor: default;
+            pointer-events: none;
         }
         .chapter-number {
             background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .chapter-card.locked .chapter-number {
+            background: linear-gradient(135deg, #64748b 0%, #475569 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
@@ -80,12 +83,15 @@
             inset: 0;
             background: linear-gradient(to top, rgba(15, 25, 40, 0.98) 0%, rgba(15, 25, 40, 0.85) 40%, rgba(15, 25, 40, 0.7) 100%);
         }
-        .chapter-card:hover .chapter-preview {
+        .chapter-card:not(.locked):hover .chapter-preview {
             opacity: 1;
         }
         .chapter-card .card-content {
             position: relative;
             z-index: 1;
+        }
+        .chapter-card.locked .card-content {
+            filter: blur(0);
         }
     </style>
 </head>
@@ -131,6 +137,27 @@
     </div>
 
     <script>
+        // Cookie helper functions
+        function getCookie(name) {
+            const value = document.cookie.split('; ').find(row => row.startsWith(name + '='));
+            if (!value) return null;
+            try {
+                return JSON.parse(decodeURIComponent(value.split('=')[1]));
+            } catch {
+                return null;
+            }
+        }
+
+        function getLoggedInUser() {
+            return getCookie('user');
+        }
+
+        // Check authentication
+        const currentUser = getLoggedInUser();
+        if (!currentUser) {
+            window.location.href = '/';
+        }
+
         // Chapter data - in the future this could come from the server
         const chapters = [
             { id: 1, title: "Mindustry", subtitle: "Factory Defense", unlocked: true, completed: false, image: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRHJRwVhw1yQo_TJJDIOeKP_7ABUKM6KZL8KkjoA_oZ81kxOLIqdlLJgqxzS050KkdWnAYI&s=10" },
@@ -150,54 +177,82 @@
             grid.innerHTML = '';
 
             chapters.forEach(chapter => {
-                const card = document.createElement('a');
-                card.href = chapter.unlocked ? `/combat?ch=${chapter.id}` : '#';
-                card.className = `chapter-card glass rounded-2xl p-6 border border-white/10 block ${chapter.locked ? 'locked' : ''}`;
+                const isLocked = !chapter.unlocked;
                 
-                if (!chapter.unlocked) {
-                    card.onclick = (e) => e.preventDefault();
+                const card = document.createElement('div');
+                card.className = `chapter-card glass rounded-2xl p-6 border border-white/10 ${isLocked ? 'locked' : ''}`;
+                
+                if (!isLocked) {
+                    card.style.cursor = 'pointer';
+                    card.onclick = () => window.location.href = `/levels?ch=${chapter.id}`;
                 }
 
-                const statusBadge = chapter.completed 
-                    ? '<span class="bg-emerald-500/20 text-emerald-400 text-[10px] uppercase tracking-wider px-2 py-1 rounded-full border border-emerald-500/30">Completed</span>'
-                    : chapter.unlocked 
-                        ? '<span class="bg-amber-500/20 text-amber-400 text-[10px] uppercase tracking-wider px-2 py-1 rounded-full border border-amber-500/30">Available</span>'
-                        : '<span class="bg-slate-500/20 text-slate-400 text-[10px] uppercase tracking-wider px-2 py-1 rounded-full border border-slate-500/30">🔒 Locked</span>';
-
-                card.innerHTML = `
-                    <div class="chapter-preview" style="background-image: url('${chapter.image}')"></div>
-                    <div class="card-content">
-                        <div class="flex items-start justify-between mb-4">
-                            <div class="chapter-number text-5xl font-black">${String(chapter.id).padStart(2, '0')}</div>
-                            ${statusBadge}
+                if (isLocked) {
+                    // Locked chapter - show mystery
+                    card.innerHTML = `
+                        <div class="card-content">
+                            <div class="flex items-start justify-between mb-4">
+                                <div class="chapter-number text-5xl font-black">${String(chapter.id).padStart(2, '0')}</div>
+                                <span class="bg-slate-500/20 text-slate-400 text-[10px] uppercase tracking-wider px-2 py-1 rounded-full border border-slate-500/30">🔒 Locked</span>
+                            </div>
+                            <h2 class="text-xl font-semibold text-slate-500 mb-1">???</h2>
+                            <p class="text-slate-600 text-sm">Complete previous chapters to unlock</p>
+                            <div class="mt-4 pt-4 border-t border-white/5">
+                                <span class="text-xs text-slate-600">Chapter locked</span>
+                            </div>
                         </div>
-                        <h2 class="text-xl font-semibold text-white mb-1">${chapter.title}</h2>
-                        <p class="text-slate-400 text-sm">${chapter.subtitle}</p>
-                        ${chapter.unlocked ? `
+                    `;
+                } else {
+                    // Unlocked chapter - show full info
+                    const statusBadge = chapter.completed 
+                        ? '<span class="bg-emerald-500/20 text-emerald-400 text-[10px] uppercase tracking-wider px-2 py-1 rounded-full border border-emerald-500/30">Completed</span>'
+                        : '<span class="bg-amber-500/20 text-amber-400 text-[10px] uppercase tracking-wider px-2 py-1 rounded-full border border-amber-500/30">Available</span>';
+
+                    card.innerHTML = `
+                        <div class="chapter-preview" style="background-image: url('${chapter.image}')"></div>
+                        <div class="card-content">
+                            <div class="flex items-start justify-between mb-4">
+                                <div class="chapter-number text-5xl font-black">${String(chapter.id).padStart(2, '0')}</div>
+                                ${statusBadge}
+                            </div>
+                            <h2 class="text-xl font-semibold text-white mb-1">${chapter.title}</h2>
+                            <p class="text-slate-400 text-sm">${chapter.subtitle}</p>
                             <div class="mt-4 pt-4 border-t border-white/10 flex items-center justify-between">
                                 <span class="text-xs text-slate-500 uppercase tracking-wider">Click to Play</span>
                                 <span class="text-amber-400 text-lg">→</span>
                             </div>
-                        ` : `
-                            <div class="mt-4 pt-4 border-t border-white/10">
-                            <span class="text-xs text-slate-500">Complete previous chapter to unlock</span>
                         </div>
-                    `}
-                    </div>
-                `;
+                    `;
+                }
 
                 grid.appendChild(card);
             });
         }
 
-        // TODO: Fetch unlocked chapters from server based on user progress
-        // async function fetchProgress() {
-        //     const res = await fetch('/api/getProgress');
-        //     const data = await res.json();
-        //     // Update chapters array with unlocked/completed status
-        // }
+        // Fetch chapter progress from server
+        async function fetchProgress() {
+            if (!currentUser) return;
+            
+            try {
+                const res = await fetch(`/api/accounts/${currentUser.username}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    // Update chapters array with unlocked/completed status from server
+                    data.chapterProgress.forEach(cp => {
+                        const chapter = chapters.find(c => c.id === cp.chapterId);
+                        if (chapter) {
+                            chapter.unlocked = cp.unlocked;
+                            chapter.completed = cp.completed;
+                        }
+                    });
+                }
+            } catch (err) {
+                console.error('Failed to fetch progress:', err);
+            }
+        }
 
-        renderChapters();
+        // Initialize
+        fetchProgress().then(() => renderChapters());
     </script>
 </body>
 </html>

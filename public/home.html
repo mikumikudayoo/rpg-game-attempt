@@ -141,16 +141,18 @@
 							<div class="text-xl font-semibold text-white">Jump back into your run</div>
 						</div>
 					</div>
-					<form class="space-y-4" onsubmit="event.preventDefault(); alert('Logged in (demo).');">
+					<form id="loginForm" class="space-y-4">
 						<div>
-							<label class="text-sm text-slate-300">Email</label>
-							<input required type="email" class="input w-full mt-1 px-3 py-3 rounded-xl" placeholder="you@example.com">
+							<label class="text-sm text-slate-300">Username</label>
+							<input required type="text" id="loginUsername" class="input w-full mt-1 px-3 py-3 rounded-xl" placeholder="your_username">
 						</div>
 						<div>
 							<label class="text-sm text-slate-300">Password</label>
-							<input required type="password" class="input w-full mt-1 px-3 py-3 rounded-xl" placeholder="••••••••">
+							<input required type="password" id="loginPassword" class="input w-full mt-1 px-3 py-3 rounded-xl" placeholder="••••••••">
 						</div>
-						<button type="submit" class="btn w-full bg-amber-500 text-slate-900 font-semibold py-3 rounded-xl shadow-lg">Log In</button>
+						<div id="loginError" class="hidden text-red-400 text-sm bg-red-500/10 border border-red-500/30 rounded-lg p-2"></div>
+						<div id="loginSuccess" class="hidden text-emerald-400 text-sm bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-2"></div>
+						<button type="submit" id="loginBtn" class="btn w-full bg-amber-500 text-slate-900 font-semibold py-3 rounded-xl shadow-lg">Log In</button>
 					</form>
 				</div>
 
@@ -162,26 +164,26 @@
 					<div class="text-xl font-semibold text-white">Claim your starter team</div>
 						</div>
 					</div>
-					<form class="space-y-4" onsubmit="event.preventDefault(); alert('Signed up (demo).');">
-						<div class="grid sm:grid-cols-2 gap-3">
-							<div>
-								<label class="text-sm text-slate-300">First name</label>
-								<input required type="text" class="input w-full mt-1 px-3 py-3 rounded-xl" placeholder="Ada">
-							</div>
-							<div>
-								<label class="text-sm text-slate-300">Last name</label>
-								<input required type="text" class="input w-full mt-1 px-3 py-3 rounded-xl" placeholder="Lovelace">
-							</div>
+					<form id="signupForm" class="space-y-4">
+						<div>
+							<label class="text-sm text-slate-300">Username</label>
+							<input required type="text" id="signupUsername" class="input w-full mt-1 px-3 py-3 rounded-xl" placeholder="explorer_one">
 						</div>
 						<div>
 							<label class="text-sm text-slate-300">Email</label>
-							<input required type="email" class="input w-full mt-1 px-3 py-3 rounded-xl" placeholder="crew@explorers.io">
+							<input required type="email" id="signupEmail" class="input w-full mt-1 px-3 py-3 rounded-xl" placeholder="crew@explorers.io">
 						</div>
 						<div>
 							<label class="text-sm text-slate-300">Password</label>
-							<input required type="password" class="input w-full mt-1 px-3 py-3 rounded-xl" placeholder="Create a password">
+							<input required type="password" id="signupPassword" class="input w-full mt-1 px-3 py-3 rounded-xl" placeholder="Create a password" minlength="6">
 						</div>
-						<button type="submit" class="btn w-full bg-white text-slate-900 font-semibold py-3 rounded-xl shadow-lg">Create Account</button>
+						<div>
+							<label class="text-sm text-slate-300">Confirm Password</label>
+							<input required type="password" id="signupConfirm" class="input w-full mt-1 px-3 py-3 rounded-xl" placeholder="Confirm your password">
+						</div>
+						<div id="signupError" class="hidden text-red-400 text-sm bg-red-500/10 border border-red-500/30 rounded-lg p-2"></div>
+						<div id="signupSuccess" class="hidden text-emerald-400 text-sm bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-2"></div>
+						<button type="submit" id="signupBtn" class="btn w-full bg-white text-slate-900 font-semibold py-3 rounded-xl shadow-lg">Create Account</button>
 					</form>
 				</div>
 			</section>
@@ -195,6 +197,156 @@
 
 	<script>
 		document.getElementById('year').innerText = new Date().getFullYear();
+
+		// Helper to show error/success messages
+		function showMessage(elementId, message, isError = true) {
+			const el = document.getElementById(elementId);
+			el.textContent = message;
+			el.classList.remove('hidden');
+			if (isError) {
+				setTimeout(() => el.classList.add('hidden'), 5000);
+			}
+		}
+
+		function hideMessages(prefix) {
+			document.getElementById(prefix + 'Error').classList.add('hidden');
+			document.getElementById(prefix + 'Success').classList.add('hidden');
+		}
+
+		// Cookie utility functions
+		function setCookie(name, value, days = 30) {
+			const expires = new Date(Date.now() + days * 864e5).toUTCString();
+			document.cookie = name + '=' + encodeURIComponent(JSON.stringify(value)) + '; expires=' + expires + '; path=/; SameSite=Lax';
+		}
+
+		function getCookie(name) {
+			const value = document.cookie.split('; ').find(row => row.startsWith(name + '='));
+			if (!value) return null;
+			try {
+				return JSON.parse(decodeURIComponent(value.split('=')[1]));
+			} catch {
+				return null;
+			}
+		}
+
+		function deleteCookie(name) {
+			document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
+		}
+
+		// Store logged-in user in cookies
+		function setLoggedInUser(account) {
+			setCookie('user', account, 30);
+		}
+
+		function getLoggedInUser() {
+			return getCookie('user');
+		}
+
+		function logoutUser() {
+			deleteCookie('user');
+		}
+
+		// Login form handler
+		document.getElementById('loginForm').addEventListener('submit', async (e) => {
+			e.preventDefault();
+			hideMessages('login');
+
+			const username = document.getElementById('loginUsername').value.trim();
+			const password = document.getElementById('loginPassword').value;
+			const btn = document.getElementById('loginBtn');
+
+			btn.disabled = true;
+			btn.textContent = 'Logging in...';
+
+			try {
+				const res = await fetch('/api/accounts/login', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ username, password })
+				});
+
+				const data = await res.json();
+
+				if (!res.ok) {
+					showMessage('loginError', data.error || 'Login failed.');
+				} else {
+					setLoggedInUser(data.account);
+					showMessage('loginSuccess', `Welcome back, ${data.account.username}! Redirecting...`, false);
+					setTimeout(() => {
+						window.location.href = '/chapters';
+					}, 1500);
+				}
+			} catch (err) {
+				showMessage('loginError', 'Network error. Please try again.');
+			} finally {
+				btn.disabled = false;
+				btn.textContent = 'Log In';
+			}
+		});
+
+		// Signup form handler
+		document.getElementById('signupForm').addEventListener('submit', async (e) => {
+			e.preventDefault();
+			hideMessages('signup');
+
+			const username = document.getElementById('signupUsername').value.trim();
+			const email = document.getElementById('signupEmail').value.trim();
+			const password = document.getElementById('signupPassword').value;
+			const confirm = document.getElementById('signupConfirm').value;
+			const btn = document.getElementById('signupBtn');
+
+			// Client-side validation
+			if (password !== confirm) {
+				showMessage('signupError', 'Passwords do not match.');
+				return;
+			}
+
+			if (password.length < 6) {
+				showMessage('signupError', 'Password must be at least 6 characters.');
+				return;
+			}
+
+			if (username.length < 3) {
+				showMessage('signupError', 'Username must be at least 3 characters.');
+				return;
+			}
+
+			btn.disabled = true;
+			btn.textContent = 'Creating account...';
+
+			try {
+				const res = await fetch('/api/accounts/register', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ username, email, password })
+				});
+
+				const data = await res.json();
+
+				if (!res.ok) {
+					showMessage('signupError', data.error || 'Registration failed.');
+				} else {
+					showMessage('signupSuccess', 'Account created! You can now log in.', false);
+					// Clear form
+					document.getElementById('signupForm').reset();
+					// Auto-fill login form
+					document.getElementById('loginUsername').value = username;
+					document.getElementById('loginPassword').focus();
+				}
+			} catch (err) {
+				showMessage('signupError', 'Network error. Please try again.');
+			} finally {
+				btn.disabled = false;
+				btn.textContent = 'Create Account';
+			}
+		});
+
+		// Check if already logged in
+		const user = getLoggedInUser();
+		if (user) {
+			// Could show a "Welcome back" banner or redirect
+			console.log('Logged in as:', user.username);
+		}
 	</script>
 </body>
 </html>

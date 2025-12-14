@@ -1,0 +1,5 @@
+{
+    "note_to_self": "only disallows requests, but websockets will keep going until they stop or combat ends",
+    "note_to_self_2": "DO NOT TURN OFF SERVER WHILE COMBATS ARE ONGOING",
+    "maintenance_mode": false
+}

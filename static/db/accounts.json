@@ -1,0 +1,97 @@
+[
+  {
+    "username": "player1",
+    "email": "player1@example.com",
+    "passwordHash": "$2b$10$examplehashhere1234567890",
+    "createdAt": { "$date": "2025-12-01T00:00:00.000Z" },
+    "lastLogin": { "$date": "2025-12-12T10:30:00.000Z" },
+    "chapters": {
+      "1": {
+        "unlocked": true,
+        "completed": false,
+        "savedProgress": null,
+        "characterLevels": [1, 1, 1, 1, 1],
+        "inventory": {
+          "currency": 1000,
+          "pulls": 10,
+          "unlockedAbilities": []
+        }
+      }
+    },
+    "currentChapter": 1,
+    "stats": {
+      "totalBattles": 0,
+      "wins": 0,
+      "losses": 0,
+      "totalDamageDealt": 0,
+      "totalHealingDone": 0
+    },
+    "settings": {
+      "soundEnabled": true,
+      "musicVolume": 0.8,
+      "sfxVolume": 1.0,
+      "autoSpeed": 1
+    }
+  },
+  {
+    "username": "testuser",
+    "email": "test@example.com",
+    "passwordHash": "$2b$10$examplehashhere0987654321",
+    "createdAt": { "$date": "2025-12-05T12:00:00.000Z" },
+    "lastLogin": { "$date": "2025-12-11T18:45:00.000Z" },
+    "chapters": {
+      "1": {
+        "unlocked": true,
+        "completed": true,
+        "savedProgress": null,
+        "characterLevels": [5, 4, 4, 3, 3],
+        "inventory": {
+          "currency": 2500,
+          "pulls": 0,
+          "unlockedAbilities": ["Fireball", "Shield Bash"]
+        }
+      },
+      "2": {
+        "unlocked": true,
+        "completed": true,
+        "savedProgress": null,
+        "characterLevels": [3, 2, 2, 2, 1],
+        "inventory": {
+          "currency": 1800,
+          "pulls": 3,
+          "unlockedAbilities": ["Healing Wave"]
+        }
+      },
+      "3": {
+        "unlocked": true,
+        "completed": false,
+        "savedProgress": {
+          "battleIndex": 2,
+          "pcHealth": { "Nina": 85, "Alex": 60, "Sam": 100 },
+          "enemiesDefeated": ["Goblin", "Skeleton"],
+          "savedAt": { "$date": "2025-12-11T18:40:00.000Z" }
+        },
+        "characterLevels": [2, 1, 1, 1, 1],
+        "inventory": {
+          "currency": 500,
+          "pulls": 8,
+          "unlockedAbilities": []
+        }
+      }
+    },
+    "currentChapter": 3,
+    "stats": {
+      "totalBattles": 15,
+      "wins": 12,
+      "losses": 3,
+      "totalDamageDealt": 4520,
+      "totalHealingDone": 1200
+    },
+    "settings": {
+      "soundEnabled": true,
+      "musicVolume": 0.5,
+      "sfxVolume": 0.8,
+      "autoSpeed": 2
+    }
+  }
+]
