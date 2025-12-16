@@ -481,12 +481,12 @@ let GameState = {
 let Script = [{ speaker: "", text: "" }];
 let PostVictoryScript = [{ speaker: "", text: "" }];
 
-async function fetchDialogue(ch, i1, i2) {
+async function fetchDialogue(ch, lvl, type) {
     try {
         const res = await fetch("/api/getDialogue", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ "ch": ch, "i1": i1, "i2": i2 })
+            body: JSON.stringify({ ch, lvl, type })
         });
         if (!res.ok) throw new Error("Bad response");
         const data = await res.json();
@@ -501,9 +501,10 @@ async function fetchDialogue(ch, i1, i2) {
 }
 
 function loadAllDialogues() {
+    const { chapter, level } = getUrlParams();
     Promise.all([
-        fetchDialogue(1, 0, 0).then(arr => { Script = arr; }),
-        fetchDialogue(1, 0, 1).then(arr => { PostVictoryScript = arr; })
+        fetchDialogue(chapter, level, 'pre').then(arr => { Script = arr; }),
+        fetchDialogue(chapter, level, 'post').then(arr => { PostVictoryScript = arr; })
     ]).then(() => {
         // If still in initial dialogue phase, restart with loaded script
         if (typeof startDialogue === "function" && GameState.phase === "DIALOGUE") {

@@ -560,18 +560,43 @@ app.get('/combat.js', (_req: Request, res: Response) => {
     res.sendFile(path.join(__dirname, 'public', 'combat.js'));
 });
 
-// API to get parameters
-app.get('/api/getParameters', (_req: Request, res: Response) => {
+// API to get parameters from MongoDB
+app.get('/api/getParameters', async (_req: Request, res: Response) => {
     try {
-        const paramsPath = path.join(__dirname, 'static', 'params.json');
-        const paramsData = require(paramsPath);
-        return res.json({ parameters: paramsData });
-    } catch (e: any) {
-        if (e.code === 'MODULE_NOT_FOUND') {
-            return res.status(404).json({ error: 'Parameters file not found.' });
+        const parametersCollection = db.collection('parameters');
+        const parametersDocs = await parametersCollection.find({}).toArray();
+        
+        // Convert array of documents to object keyed by name
+        const parameters: Record<string, any> = {};
+        for (const doc of parametersDocs) {
+            const { _id, name, ...rest } = doc;
+            if (name) {
+                parameters[name] = rest;
+            }
         }
-        console.error('Error loading parameters:', e);
-        return res.status(500).json({ error: 'Failed to load parameters.' });
+        
+        // If no parameters in DB, fall back to static file
+        if (Object.keys(parameters).length === 0) {
+            try {
+                const paramsPath = path.join(__dirname, 'static', 'params.json');
+                const paramsData = require(paramsPath);
+                return res.json({ parameters: paramsData });
+            } catch (e) {
+                return res.json({ parameters: {} });
+            }
+        }
+        
+        return res.json({ parameters });
+    } catch (e: any) {
+        console.error('Error loading parameters from MongoDB:', e);
+        // Fall back to static file on error
+        try {
+            const paramsPath = path.join(__dirname, 'static', 'params.json');
+            const paramsData = require(paramsPath);
+            return res.json({ parameters: paramsData });
+        } catch (fallbackError) {
+            return res.status(500).json({ error: 'Failed to load parameters.' });
+        }
     }
 });
 
@@ -684,59 +709,53 @@ app.get('/api/getUnits', (req: Request, res: Response) => {
 });
 
 app.post('/api/getDialogue', (req: Request, res: Response) => {
-    // 1. Get and validate query parameters
+    // Get chapter, level, and type (pre/post) from request
     const chapterNum = Number(req.body.ch);
-    const index1 = Number(req.body.i1); // Dialogue set index (e.g., 0, 1, 2...)
-    // Convert 'null' string or undefined to null, otherwise convert to number
-    const index2 = req.body.i2 !== 'null' && req.body.i2 !== undefined ? Number(req.body.i2) : null; 
+    const levelNum = Number(req.body.lvl) || 1;
+    const dialogueType = req.body.type || 'pre'; // 'pre' or 'post'
 
-    if (isNaN(chapterNum) || isNaN(index1)) {
-        return res.status(400).json({ error: 'Invalid chapter number (ch) or dialogue set index (i1).' });
+    if (isNaN(chapterNum)) {
+        return res.status(400).json({ error: 'Invalid chapter number (ch).' });
     }
 
     // --- File Loading Section ---
     let chapterData: ChapterDialogue;
     try {
-        // Construct the absolute path to the JSON file. 
-        // Assumes your Express server root is the base for /static.
         const filePath = path.join(__dirname, 'static', 'story', 'dialogue', `ch${chapterNum}.json`);
-        
-        // Load the JSON file synchronously
         chapterData = require(filePath); 
-
     } catch (e: any) {
-        // Handle file not found (likely chapter not existing) or JSON parsing errors
         if (e.code === 'MODULE_NOT_FOUND') {
-            return res.status(404).json({ error: `Chapter file ch${chapterNum}.json not found in /static/story/.` });
+            return res.status(404).json({ error: `Chapter file ch${chapterNum}.json not found.` });
         }
         console.error('Error loading or parsing chapter file:', e);
-        return res.status(500).json({ error: 'Failed to load chapter data due to an internal server error.' });
+        return res.status(500).json({ error: 'Failed to load chapter data.' });
     }
-    // --- End File Loading Section ---
 
     const chapterDialogues = chapterData.dialogue;
 
-    // 2. Navigate to the dialogue set using index1
-    const dialogueSet = chapterDialogues[index1];
+    // Level number maps to dialogue set index (level 1 = index 0, etc.)
+    const dialogueIndex = levelNum - 1;
+    const dialogueSet = chapterDialogues[dialogueIndex];
+    
     if (!dialogueSet) {
-        return res.status(404).json({ error: `Dialogue set index i1=${index1} not found in chapter ${chapterNum}.` });
+        // Return empty dialogue if level doesn't have dialogue defined
+        return res.json([{ speaker: "SYSTEM", text: "No dialogue for this level." }]);
     }
 
     let requestedDialogue: DialogueLine[] | undefined;
 
-    // 3. Determine the specific dialogue array using index2
-    if (index2 === 0 || index2 === null) {
-        // i2=0 (Pre-Combat) or i2=null (Defaulting to Pre-Combat)
+    // Determine pre or post combat dialogue
+    if (dialogueType === 'pre') {
         requestedDialogue = dialogueSet[0];
-    } else if (index2 === 1) {
-        // i2=1 (Post-Combat)
+    } else if (dialogueType === 'post') {
         if (dialogueSet.length > 1) {
             requestedDialogue = dialogueSet[1];
         } else {
-            return res.status(404).json({ error: `Post-combat dialogue (i2=1) not found for dialogue set i1=${index1}.` });
+            // No post-combat dialogue defined, return simple victory message
+            return res.json([{ speaker: "SYSTEM", text: "Victory!" }]);
         }
     } else {
-        return res.status(400).json({ error: 'Index i2 must be 0 (pre-combat), 1 (post-combat), or null.' });
+        return res.status(400).json({ error: 'Type must be "pre" or "post".' });
     }
 
     // 4. Send the result
