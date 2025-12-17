@@ -1775,10 +1775,99 @@ function checkWinLoss() {
     return false;
 }
 
-function showGameOver(title, msg, colorClass) {
+// Cookie utility functions for level completion
+function getCookie(name) {
+    const value = document.cookie.split('; ').find(row => row.startsWith(name + '='));
+    if (!value) return null;
+    try {
+        return JSON.parse(decodeURIComponent(value.split('=')[1]));
+    } catch {
+        return null;
+    }
+}
+
+function setCookie(name, value, days = 30) {
+    const expires = new Date(Date.now() + days * 864e5).toUTCString();
+    document.cookie = name + '=' + encodeURIComponent(JSON.stringify(value)) + '; expires=' + expires + '; path=/; SameSite=Lax';
+}
+
+function getLoggedInUser() {
+    return getCookie('user');
+}
+
+// Complete level and unlock next level
+async function completeLevel() {
+    const user = getLoggedInUser();
+    if (!user || !user.username) {
+        console.warn('No logged in user, cannot save progress');
+        return null;
+    }
+    
+    const { chapter, level } = getUrlParams();
+    
+    try {
+        const res = await fetch(`/api/accounts/${encodeURIComponent(user.username)}/levels/${chapter}/${level}/complete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        if (!res.ok) {
+            const errData = await res.json();
+            console.error('Failed to complete level:', errData.error);
+            return null;
+        }
+        
+        const result = await res.json();
+        console.log('Level completed:', result);
+        
+        // Update the local cookie with new progress
+        const chapterKey = String(chapter);
+        if (!user.chapters) user.chapters = {};
+        if (!user.chapters[chapterKey]) {
+            user.chapters[chapterKey] = { unlocked: true, completed: false, levelsCompleted: 0 };
+        }
+        
+        // Update levels completed
+        user.chapters[chapterKey].levelsCompleted = Math.max(
+            user.chapters[chapterKey].levelsCompleted || 0,
+            level
+        );
+        
+        // If chapter completed, mark it and unlock next chapter
+        if (result.chapterCompleted) {
+            user.chapters[chapterKey].completed = true;
+            const nextChapterKey = String(chapter + 1);
+            if (!user.chapters[nextChapterKey]) {
+                user.chapters[nextChapterKey] = { unlocked: true, completed: false, levelsCompleted: 0 };
+            } else {
+                user.chapters[nextChapterKey].unlocked = true;
+            }
+        }
+        
+        // Save updated user data to cookie
+        setCookie('user', user, 30);
+        
+        return result;
+    } catch (e) {
+        console.error('Error completing level:', e);
+        return null;
+    }
+}
+
+async function showGameOver(title, msg, colorClass) {
     const modal = document.getElementById('game-over-modal');
     const titleEl = document.getElementById('modal-title');
     const msgEl = document.getElementById('modal-msg');
+    
+    // If victory, complete the level and unlock the next one
+    if (title === 'VICTORY') {
+        const result = await completeLevel();
+        if (result && result.nextLevel) {
+            msg = `Level ${result.levelCompleted} Complete! Level ${result.nextLevel} unlocked.`;
+        } else if (result && result.chapterCompleted) {
+            msg = `Chapter Complete! Chapter ${result.nextChapterUnlocked} unlocked!`;
+        }
+    }
     
     titleEl.innerText = title;
     titleEl.className = `text-3xl sm:text-4xl font-black mb-2 uppercase tracking-tighter ${colorClass}`;

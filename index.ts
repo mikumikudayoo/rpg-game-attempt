@@ -400,21 +400,32 @@ app.post('/api/accounts/:username/levels/:chapter/:level/complete', async (req: 
     }
 });
 
-// Helper function to get the number of levels per chapter
+// Cache for chapter level counts (read from static/story/enemy/ch*.json)
+const chapterLevelCountCache: Record<number, number> = {};
+
+// Helper function to get the number of levels per chapter (reads from story/enemy json files)
 function getChapterLevelCount(chapter: number): number {
-    const levelCounts: Record<number, number> = {
-        1: 10,
-        2: 12,
-        3: 10,
-        4: 8,
-        5: 10,
-        6: 12,
-        7: 10,
-        8: 15,
-        9: 10,
-        10: 20
-    };
-    return levelCounts[chapter] || 10;
+    // Return cached value if available
+    if (chapterLevelCountCache[chapter] !== undefined) {
+        return chapterLevelCountCache[chapter];
+    }
+    
+    // Try to read from the story/enemy json file
+    try {
+        const fs = require('fs');
+        const filePath = path.join(__dirname, 'static', 'story', 'enemy', `ch${chapter}.json`);
+        if (fs.existsSync(filePath)) {
+            const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+            const levelCount = data.levels?.length || 10;
+            chapterLevelCountCache[chapter] = levelCount;
+            return levelCount;
+        }
+    } catch (e) {
+        console.warn(`Could not read level count for chapter ${chapter}:`, e);
+    }
+    
+    // Fallback to default
+    return 10;
 }
 
 // Update account stats (after battle)
@@ -534,6 +545,40 @@ app.patch('/api/accounts/:username/settings', async (req: Request, res: Response
     } catch (error) {
         console.error('Update settings error:', error);
         return res.status(500).json({ error: 'Failed to update settings.' });
+    }
+});
+
+// Get chapter info (including level count from story/enemy json)
+app.get('/api/chapters/:chapter', (req: Request, res: Response) => {
+    try {
+        const chapterNum = parseInt(req.params.chapter || '1');
+        const levelCount = getChapterLevelCount(chapterNum);
+        
+        // Chapter metadata (can be expanded)
+        const chapterMeta: Record<number, { title: string; subtitle: string }> = {
+            1: { title: "Mindustry", subtitle: "Factory Defense" },
+            2: { title: "Item Asylum", subtitle: "Chaos Unleashed" },
+            3: { title: "Forsaken", subtitle: "Into the Void" },
+            4: { title: "Die of Death", subtitle: "Asymmetrical Horror Game" },
+            5: { title: "Phasmophobia", subtitle: "Ghost Hunt" },
+            6: { title: "Forsaken Part 2", subtitle: "Return to the Void" },
+            7: { title: "Project Sekai", subtitle: "Virtual Stage" },
+            8: { title: "Limbus Company", subtitle: "Dante's Descent" },
+            9: { title: "Battle Bricks", subtitle: "Block Warfare" },
+            10: { title: "Recapitulation", subtitle: "The Final Chapter" }
+        };
+        
+        const meta = chapterMeta[chapterNum] || { title: `Chapter ${chapterNum}`, subtitle: "Unknown" };
+        
+        return res.json({
+            chapter: chapterNum,
+            title: meta.title,
+            subtitle: meta.subtitle,
+            levels: levelCount
+        });
+    } catch (error) {
+        console.error('Get chapter info error:', error);
+        return res.status(500).json({ error: 'Failed to get chapter info.' });
     }
 });
 

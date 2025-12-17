@@ -101,8 +101,8 @@
     </div>
 
     <script>
-        // Chapter data
-        const chapters = {
+        // Chapter data (will be updated from API)
+        let chapters = {
             1: { title: "Mindustry", subtitle: "Factory Defense", levels: 10 },
             2: { title: "Item Asylum", subtitle: "Chaos Unleashed", levels: 12 },
             3: { title: "Forsaken", subtitle: "Into the Void", levels: 10 },
@@ -118,6 +118,25 @@
         // Get chapter from URL
         const urlParams = new URLSearchParams(window.location.search);
         const chapterId = parseInt(urlParams.get('ch')) || 1;
+
+        // Fetch chapter info from server (to get accurate level count from story/enemy json)
+        async function fetchChapterInfo(chapterNum) {
+            try {
+                const res = await fetch(`/api/chapters/${chapterNum}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    chapters[chapterNum] = {
+                        title: data.title,
+                        subtitle: data.subtitle,
+                        levels: data.levels
+                    };
+                    return data;
+                }
+            } catch (e) {
+                console.warn('Could not fetch chapter info, using defaults:', e);
+            }
+            return chapters[chapterNum];
+        }
 
         // Cookie utility functions
         function getCookie(name) {
@@ -150,7 +169,10 @@
             window.location.href = '/';
         }
 
-        function renderLevels() {
+        async function renderLevels() {
+            // Fetch chapter info from server to get accurate level count
+            await fetchChapterInfo(chapterId);
+            
             const chapter = chapters[chapterId];
             if (!chapter) {
                 window.location.href = '/chapters';
