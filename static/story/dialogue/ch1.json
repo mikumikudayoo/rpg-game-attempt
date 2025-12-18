@@ -2,11 +2,11 @@
     "dialogue": [
         [
             [
-                { "speaker": "bro", "text": "yo bro i found this cool game named \"internet explorers\"" },
+                { "speaker": "bro", "text": "yo bro i found this cool game named \"fandom adventurers\"" },
                 { "speaker": "You", "text": "oh yeah? whats it about?" },
                 { "speaker": "bro", "text": "its this rpg where u fight off enemies from random fandoms" },
                 { "speaker": "You", "text": "cool!!" },
-                { "speaker": "narrator", "text": "u go to a browser and open up internet explorers" },
+                { "speaker": "narrator", "text": "u go to a browser and open up fandom adventurers" },
                 { "speaker": "you", "text": "its so cool that its all in a browser!!" },
                 { "speaker": "you", "text": "well i just need to sign up then" },
                 { "speaker": "narrator", "text": "you sign up, but then suddenly, a portal opens up and you get sucked into it." },

@@ -589,6 +589,10 @@ app.get('/', (_req: Request, res: Response) => {
     res.sendFile(path.join(__dirname, 'public', 'home.html'));
 });
 
+app.get('/dashboard', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+});
+
 app.get('/chapters', (_req: Request, res: Response) => {
     res.sendFile(path.join(__dirname, 'public', 'chapters.html'));
 });

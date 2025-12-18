@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Internet Explorers – Home</title>
+	<title>Fandom Adventurers – Home</title>
 	<script src="https://cdn.tailwindcss.com"></script>
 	<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 	<style>
@@ -49,9 +49,9 @@
 	<div class="relative z-10">
 		<header class="max-w-6xl mx-auto px-6 pt-10 flex items-center justify-between">
 			<div class="flex items-center gap-3">
-				<div class="w-11 h-11 rounded-xl bg-amber-500 flex items-center justify-center text-slate-900 font-black text-xl shadow-lg">IE</div>
+				<div class="w-11 h-11 rounded-xl bg-amber-500 flex items-center justify-center text-slate-900 font-black text-xl shadow-lg">FA</div>
 				<div>
-					<div class="text-sm uppercase tracking-[0.3em] text-amber-300">Internet Explorers</div>
+					<div class="text-sm uppercase tracking-[0.3em] text-amber-300">Fandom Adventurers</div>
 					<div class="text-lg font-semibold text-slate-100">Gacha Tactics RPG</div>
 				</div>
 			</div>
@@ -190,7 +190,7 @@
 		</main>
 
 	<footer class="max-w-6xl mx-auto px-6 pb-10 mt-16 flex flex-col sm:flex-row items-center justify-between text-sm text-slate-400">
-		<div>© <span id="year"></span> Internet Explorers. Browser-native gacha RPG.</div>
+		<div>© <span id="year"></span> Fandom Adventurers. Browser-native gacha RPG.</div>
         <div class="mt-3 sm:mt-0">Made with ♥ by ninathedev</div>
 		</footer>
 	</div>
@@ -273,7 +273,7 @@
 					setLoggedInUser(data.account);
 					showMessage('loginSuccess', `Welcome back, ${data.account.username}! Redirecting...`, false);
 					setTimeout(() => {
-						window.location.href = '/chapters';
+						window.location.href = '/dashboard';
 					}, 1500);
 				}
 			} catch (err) {

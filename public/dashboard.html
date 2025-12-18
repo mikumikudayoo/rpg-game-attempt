@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard – Fandom Adventurers</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: linear-gradient(135deg, #0b1623 0%, #0f1c2c 40%, #0a0f1c 100%);
+            --card: rgba(15, 25, 40, 0.85);
+            --accent: #f59e0b;
+        }
+        * { font-family: 'Space Grotesk', system-ui, sans-serif; }
+        body { background: var(--bg); color: #e5e7eb; min-height: 100vh; }
+        .glass { background: var(--card); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 25px 80px rgba(0,0,0,0.35); }
+        .grid-lines {
+            position: fixed;
+            inset: 0;
+            background-image: linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+            background-size: 48px 48px;
+            pointer-events: none;
+            z-index: 0;
+        }
+        .blob {
+            position: fixed;
+            width: 360px;
+            height: 360px;
+            border-radius: 9999px;
+            filter: blur(110px);
+            opacity: 0.4;
+            z-index: 0;
+        }
+        .blob.orange { background: #f59e0b; top: 10%; left: 4%; }
+        .blob.blue { background: #22d3ee; bottom: 8%; right: 6%; }
+        .btn { transition: transform 150ms ease, box-shadow 150ms ease; }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(0,0,0,0.35); }
+        .menu-card {
+            transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
+            cursor: pointer;
+        }
+        .menu-card:hover {
+            transform: translateY(-4px) scale(1.02);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+            border-color: rgba(245, 158, 11, 0.5);
+        }
+        .stat-value {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+    </style>
+</head>
+<body class="min-h-screen relative">
+    <div class="grid-lines"></div>
+    <div class="blob orange"></div>
+    <div class="blob blue"></div>
+
+    <div class="relative z-10">
+        <!-- Header -->
+        <header class="max-w-6xl mx-auto px-6 pt-10 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-11 h-11 rounded-xl bg-amber-500 flex items-center justify-center text-slate-900 font-black text-xl shadow-lg">FA</div>
+                <div>
+                    <div class="text-sm uppercase tracking-[0.3em] text-amber-300">Fandom Adventurers</div>
+                    <div class="text-lg font-semibold text-slate-100">Dashboard</div>
+                </div>
+            </div>
+            <div class="flex items-center gap-4">
+                <div class="text-right hidden sm:block">
+                    <div class="text-sm text-slate-400">Welcome back,</div>
+                    <div class="text-white font-semibold" id="username">Explorer</div>
+                </div>
+                <button id="logoutBtn" class="btn bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg font-semibold shadow-lg">
+                    Log Out
+                </button>
+            </div>
+        </header>
+
+        <main class="max-w-6xl mx-auto px-6 py-10">
+            <!-- Welcome Banner -->
+            <section class="glass rounded-2xl p-8 border border-white/10 mb-8">
+                <div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+                    <div>
+                        <h1 class="text-3xl sm:text-4xl font-semibold text-white mb-2">Welcome to the Hub</h1>
+                        <p class="text-slate-300 text-lg">Choose your next adventure, manage your team, or check your stats.</p>
+                    </div>
+                    <a href="/chapters" class="btn bg-amber-500 text-slate-900 px-6 py-3 rounded-xl font-semibold shadow-lg text-lg flex items-center gap-2">
+                        <span>Continue Story</span>
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                        </svg>
+                    </a>
+                </div>
+            </section>
+
+            <!-- Stats Overview -->
+            <section class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                <div class="glass rounded-xl p-5 border border-white/10">
+                    <div class="text-sm uppercase tracking-wider text-amber-300 mb-1">Current Chapter</div>
+                    <div class="text-3xl font-bold stat-value" id="currentChapter">1</div>
+                </div>
+                <div class="glass rounded-xl p-5 border border-white/10">
+                    <div class="text-sm uppercase tracking-wider text-amber-300 mb-1">Total Battles</div>
+                    <div class="text-3xl font-bold stat-value" id="totalBattles">0</div>
+                </div>
+                <div class="glass rounded-xl p-5 border border-white/10">
+                    <div class="text-sm uppercase tracking-wider text-amber-300 mb-1">Wins</div>
+                    <div class="text-3xl font-bold stat-value" id="wins">0</div>
+                </div>
+                <div class="glass rounded-xl p-5 border border-white/10">
+                    <div class="text-sm uppercase tracking-wider text-amber-300 mb-1">Win Rate</div>
+                    <div class="text-3xl font-bold stat-value" id="winRate">0%</div>
+                </div>
+            </section>
+
+            <!-- Menu Options -->
+            <section class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                <a href="/chapters" class="menu-card glass rounded-2xl p-6 border border-white/10 block">
+                    <div class="w-14 h-14 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 mb-4">
+                        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-xl font-semibold text-white mb-2">Story Mode</h3>
+                    <p class="text-slate-400 text-sm">Continue your adventure through the chapters and uncover the mystery.</p>
+                </a>
+
+                <div class="menu-card glass rounded-2xl p-6 border border-white/10 opacity-60 cursor-not-allowed">
+                    <div class="w-14 h-14 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-300 mb-4">
+                        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-xl font-semibold text-white mb-2">Team Builder</h3>
+                    <p class="text-slate-400 text-sm">Manage your roster and customize your team composition.</p>
+                    <span class="inline-block mt-3 text-xs uppercase tracking-wider text-slate-500 bg-slate-800 px-2 py-1 rounded">Coming Soon</span>
+                </div>
+
+                <div class="menu-card glass rounded-2xl p-6 border border-white/10 opacity-60 cursor-not-allowed">
+                    <div class="w-14 h-14 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-300 mb-4">
+                        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-xl font-semibold text-white mb-2">Gacha</h3>
+                    <p class="text-slate-400 text-sm">Pull for new abilities and expand your strategic options.</p>
+                    <span class="inline-block mt-3 text-xs uppercase tracking-wider text-slate-500 bg-slate-800 px-2 py-1 rounded">Coming Soon</span>
+                </div>
+
+                <div class="menu-card glass rounded-2xl p-6 border border-white/10 opacity-60 cursor-not-allowed">
+                    <div class="w-14 h-14 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-300 mb-4">
+                        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-xl font-semibold text-white mb-2">Leaderboard</h3>
+                    <p class="text-slate-400 text-sm">See how you rank against other explorers worldwide.</p>
+                    <span class="inline-block mt-3 text-xs uppercase tracking-wider text-slate-500 bg-slate-800 px-2 py-1 rounded">Coming Soon</span>
+                </div>
+
+                <div class="menu-card glass rounded-2xl p-6 border border-white/10 opacity-60 cursor-not-allowed">
+                    <div class="w-14 h-14 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-300 mb-4">
+                        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-xl font-semibold text-white mb-2">Events</h3>
+                    <p class="text-slate-400 text-sm">Participate in limited-time events for exclusive rewards.</p>
+                    <span class="inline-block mt-3 text-xs uppercase tracking-wider text-slate-500 bg-slate-800 px-2 py-1 rounded">Coming Soon</span>
+                </div>
+
+                <div class="menu-card glass rounded-2xl p-6 border border-white/10 opacity-60 cursor-not-allowed">
+                    <div class="w-14 h-14 rounded-xl bg-slate-500/20 border border-slate-500/40 flex items-center justify-center text-slate-300 mb-4">
+                        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        </svg>
+                    </div>
+                    <h3 class="text-xl font-semibold text-white mb-2">Settings</h3>
+                    <p class="text-slate-400 text-sm">Adjust game settings, audio, and account preferences.</p>
+                    <span class="inline-block mt-3 text-xs uppercase tracking-wider text-slate-500 bg-slate-800 px-2 py-1 rounded">Coming Soon</span>
+                </div>
+            </section>
+        </main>
+
+        <footer class="max-w-6xl mx-auto px-6 pb-10 mt-8 flex flex-col sm:flex-row items-center justify-between text-sm text-slate-400">
+            <div>© <span id="year"></span> Fandom Adventurers. Browser-native gacha RPG.</div>
+            <div class="mt-3 sm:mt-0">Made with ♥ by ninathedev</div>
+        </footer>
+    </div>
+
+    <script>
+        document.getElementById('year').innerText = new Date().getFullYear();
+
+        // Cookie utility functions
+        function getCookie(name) {
+            const value = document.cookie.split('; ').find(row => row.startsWith(name + '='));
+            if (!value) return null;
+            try {
+                return JSON.parse(decodeURIComponent(value.split('=')[1]));
+            } catch {
+                return null;
+            }
+        }
+
+        function deleteCookie(name) {
+            document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
+        }
+
+        // Check if user is logged in
+        const user = getCookie('user');
+        if (!user) {
+            window.location.href = '/';
+        } else {
+            // Populate user data
+            document.getElementById('username').textContent = user.username || 'Explorer';
+            document.getElementById('currentChapter').textContent = user.currentChapter || 1;
+            
+            // Populate stats if available
+            if (user.stats) {
+                document.getElementById('totalBattles').textContent = user.stats.totalBattles || 0;
+                document.getElementById('wins').textContent = user.stats.wins || 0;
+                const winRate = user.stats.totalBattles > 0 
+                    ? Math.round((user.stats.wins / user.stats.totalBattles) * 100) 
+                    : 0;
+                document.getElementById('winRate').textContent = winRate + '%';
+            }
+        }
+
+        // Logout handler
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+            deleteCookie('user');
+            window.location.href = '/';
+        });
+    </script>
+</body>
+</html>
