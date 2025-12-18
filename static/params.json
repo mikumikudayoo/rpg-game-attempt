@@ -1,13 +1,13 @@
 {
-    "Regeneration": { "type": "passive", "desc": "Heal 2 HP each turn", "func": "regeneration" },
-    "Fortify": { "type": "passive", "desc": "Reduce dmg by 1", "func": "fortify" },
-    "Power Strike": { "type": "ability", "desc": "+3 dmg", "func": "powerStrike" },
-    "Quick Step": { "type": "ability", "desc": "+1 speed", "func": "quickStep" },
-    "Lifesteal": { "type": "ability", "desc": "Heal on hit", "func": "lifesteal" },
-    "+10 HP": { "type": "stat", "desc": "Boost health", "func": "bonusHp" },
-    "+3 Damage": { "type": "stat", "desc": "Boost attack", "func": "bonusDamage" },
-    "Venomous": { "type": "ability", "desc": "Apply 2 Poison on hit", "func": "venomous" },
-    "Hemorrhage": { "type": "ability", "desc": "Apply 1 Bleed on hit", "func": "hemorrhage" },
-    "Searing": { "type": "ability", "desc": "Apply 2 Burn on hit", "func": "searing" },
-    "Rend": { "type": "ability", "desc": "Apply 1 Rupture on hit", "func": "rend" }
+    "Reparametize": { "type": "passive", "desc": "Heal 2 HP each turn", "func": "regeneration" },
+    "Protection Function": { "type": "passive", "desc": "Reduce dmg by 1", "func": "fortify" },
+    "Charged Attack": { "type": "ability", "desc": "+3 dmg", "func": "powerStrike" },
+    "Haste Leap": { "type": "ability", "desc": "+1 speed", "func": "quickStep" },
+    "StealPatch": { "type": "ability", "desc": "Heal on hit", "func": "lifesteal" },
+    "Better Body Parameters": { "type": "stat", "desc": "Boost health", "func": "bonusHp" },
+    "Increased net Potency": { "type": "stat", "desc": "Boost attack", "func": "bonusDamage" },
+    "Corrupted": { "type": "ability", "desc": "Apply 2 Poison on hit", "func": "venomous" },
+    "Net leaking": { "type": "ability", "desc": "Apply 1 Bleed on hit", "func": "hemorrhage" },
+    "Firewalled": { "type": "ability", "desc": "Apply 2 Burn on hit", "func": "searing" },
+    "Unstable code": { "type": "ability", "desc": "Apply 1 Rupture on hit", "func": "rend" }
 }
