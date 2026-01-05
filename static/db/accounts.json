@@ -12,9 +12,106 @@
         "savedProgress": null,
         "characterLevels": [1, 1, 1, 1, 1],
         "inventory": {
-          "currency": 1000,
-          "pulls": 10,
-          "unlockedAbilities": []
+          "gold": 1000
+        }
+      },
+      "2": {
+        "unlocked": false,
+        "completed": false,
+        "savedProgress": null,
+        "characterLevels": [1, 1, 1, 1, 1],
+        "inventory": {
+          "gold": 0,
+          "chaosTokens": 10,
+          "unlockedParameters": []
+        }
+      },
+      "3": {
+        "unlocked": false,
+        "completed": false,
+        "savedProgress": null,
+        "characterLevels": [1, 1, 1, 1, 1],
+        "inventory": {
+          "gold": 0,
+          "voidShards": 10,
+          "unlockedParameters": []
+        }
+      },
+      "4": {
+        "unlocked": false,
+        "completed": false,
+        "savedProgress": null,
+        "characterLevels": [1, 1, 1, 1, 1],
+        "inventory": {
+          "gold": 0,
+          "deathDice": 10,
+          "unlockedParameters": []
+        }
+      },
+      "5": {
+        "unlocked": false,
+        "completed": false,
+        "savedProgress": null,
+        "characterLevels": [1, 1, 1, 1, 1],
+        "inventory": {
+          "gold": 0,
+          "ghostOrbs": 10,
+          "unlockedParameters": []
+        }
+      },
+      "6": {
+        "unlocked": false,
+        "completed": false,
+        "savedProgress": null,
+        "characterLevels": [1, 1, 1, 1, 1],
+        "inventory": {
+          "gold": 0,
+          "abyssFragments": 10,
+          "unlockedParameters": []
+        }
+      },
+      "7": {
+        "unlocked": false,
+        "completed": false,
+        "savedProgress": null,
+        "characterLevels": [1, 1, 1, 1, 1],
+        "inventory": {
+          "gold": 0,
+          "crystalShards": 10,
+          "unlockedParameters": []
+        }
+      },
+      "8": {
+        "unlocked": false,
+        "completed": false,
+        "savedProgress": null,
+        "characterLevels": [1, 1, 1, 1, 1],
+        "inventory": {
+          "gold": 0,
+          "enkephalin": 10,
+          "unlockedParameters": []
+        }
+      },
+      "9": {
+        "unlocked": false,
+        "completed": false,
+        "savedProgress": null,
+        "characterLevels": [1, 1, 1, 1, 1],
+        "inventory": {
+          "gold": 0,
+          "brickCoins": 10,
+          "unlockedParameters": []
+        }
+      },
+      "10": {
+        "unlocked": false,
+        "completed": false,
+        "savedProgress": null,
+        "characterLevels": [1, 1, 1, 1, 1],
+        "inventory": {
+          "gold": 0,
+          "memoryCores": 10,
+          "unlockedParameters": []
         }
       }
     },
@@ -46,9 +143,7 @@
         "savedProgress": null,
         "characterLevels": [5, 4, 4, 3, 3],
         "inventory": {
-          "currency": 2500,
-          "pulls": 0,
-          "unlockedAbilities": ["Fireball", "Shield Bash"]
+          "gold": 2500
         }
       },
       "2": {
@@ -57,9 +152,9 @@
         "savedProgress": null,
         "characterLevels": [3, 2, 2, 2, 1],
         "inventory": {
-          "currency": 1800,
-          "pulls": 3,
-          "unlockedAbilities": ["Healing Wave"]
+          "gold": 1800,
+          "chaosTokens": 3,
+          "unlockedParameters": ["Reparametize", "Haste Leap"]
         }
       },
       "3": {
@@ -73,9 +168,86 @@
         },
         "characterLevels": [2, 1, 1, 1, 1],
         "inventory": {
-          "currency": 500,
-          "pulls": 8,
-          "unlockedAbilities": []
+          "gold": 500,
+          "voidShards": 8,
+          "unlockedParameters": ["Better Body Parameters"]
+        }
+      },
+      "4": {
+        "unlocked": false,
+        "completed": false,
+        "savedProgress": null,
+        "characterLevels": [1, 1, 1, 1, 1],
+        "inventory": {
+          "gold": 0,
+          "deathDice": 10,
+          "unlockedParameters": []
+        }
+      },
+      "5": {
+        "unlocked": false,
+        "completed": false,
+        "savedProgress": null,
+        "characterLevels": [1, 1, 1, 1, 1],
+        "inventory": {
+          "gold": 0,
+          "ghostOrbs": 10,
+          "unlockedParameters": []
+        }
+      },
+      "6": {
+        "unlocked": false,
+        "completed": false,
+        "savedProgress": null,
+        "characterLevels": [1, 1, 1, 1, 1],
+        "inventory": {
+          "gold": 0,
+          "abyssFragments": 10,
+          "unlockedParameters": []
+        }
+      },
+      "7": {
+        "unlocked": false,
+        "completed": false,
+        "savedProgress": null,
+        "characterLevels": [1, 1, 1, 1, 1],
+        "inventory": {
+          "gold": 0,
+          "crystalShards": 10,
+          "unlockedParameters": []
+        }
+      },
+      "8": {
+        "unlocked": false,
+        "completed": false,
+        "savedProgress": null,
+        "characterLevels": [1, 1, 1, 1, 1],
+        "inventory": {
+          "gold": 0,
+          "enkephalin": 10,
+          "unlockedParameters": []
+        }
+      },
+      "9": {
+        "unlocked": false,
+        "completed": false,
+        "savedProgress": null,
+        "characterLevels": [1, 1, 1, 1, 1],
+        "inventory": {
+          "gold": 0,
+          "brickCoins": 10,
+          "unlockedParameters": []
+        }
+      },
+      "10": {
+        "unlocked": false,
+        "completed": false,
+        "savedProgress": null,
+        "characterLevels": [1, 1, 1, 1, 1],
+        "inventory": {
+          "gold": 0,
+          "memoryCores": 10,
+          "unlockedParameters": []
         }
       }
     },

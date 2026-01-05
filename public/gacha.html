@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gacha – Fandom Adventurers</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: linear-gradient(135deg, #0b1623 0%, #0f1c2c 40%, #0a0f1c 100%);
+            --card: rgba(15, 25, 40, 0.85);
+            --accent: #f59e0b;
+        }
+        * { font-family: 'Space Grotesk', system-ui, sans-serif; }
+        body { background: var(--bg); color: #e5e7eb; min-height: 100vh; }
+        .glass { background: var(--card); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 25px 80px rgba(0,0,0,0.35); }
+        .grid-lines {
+            position: fixed;
+            inset: 0;
+            background-image: linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+            background-size: 48px 48px;
+            pointer-events: none;
+            z-index: 0;
+        }
+        .blob {
+            position: fixed;
+            width: 360px;
+            height: 360px;
+            border-radius: 9999px;
+            filter: blur(110px);
+            opacity: 0.4;
+            z-index: 0;
+        }
+        .blob.orange { background: #f59e0b; top: 10%; left: 4%; }
+        .blob.blue { background: #22d3ee; bottom: 8%; right: 6%; }
+        .blob.purple { background: #a855f7; top: 50%; right: 10%; }
+        .btn { transition: transform 150ms ease, box-shadow 150ms ease; }
+        .btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(0,0,0,0.35); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        
+        .chapter-tab {
+            transition: all 200ms ease;
+            cursor: pointer;
+        }
+        .chapter-tab:hover:not(.active):not(.locked) {
+            background: rgba(245, 158, 11, 0.1);
+            border-color: rgba(245, 158, 11, 0.3);
+        }
+        .chapter-tab.active {
+            background: rgba(245, 158, 11, 0.2);
+            border-color: rgba(245, 158, 11, 0.5);
+            color: #f59e0b;
+        }
+        .chapter-tab.locked {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        
+        .rarity-common { color: #9ca3af; border-color: #9ca3af; }
+        .rarity-uncommon { color: #22c55e; border-color: #22c55e; }
+        .rarity-rare { color: #3b82f6; border-color: #3b82f6; }
+        .rarity-epic { color: #a855f7; border-color: #a855f7; }
+        .rarity-legendary { color: #f59e0b; border-color: #f59e0b; }
+        
+        .pull-btn {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            transition: all 200ms ease;
+        }
+        .pull-btn:hover:not(:disabled) {
+            transform: scale(1.05);
+            box-shadow: 0 0 40px rgba(245, 158, 11, 0.4);
+        }
+        .pull-btn:disabled {
+            background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
+            cursor: not-allowed;
+        }
+        
+        .banner-card {
+            position: relative;
+            overflow: hidden;
+            transition: all 300ms ease;
+        }
+        .banner-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        }
+        .banner-image {
+            position: absolute;
+            inset: 0;
+            background-size: cover;
+            background-position: center;
+            opacity: 0.3;
+            transition: opacity 300ms ease;
+        }
+        .banner-card:hover .banner-image {
+            opacity: 0.5;
+        }
+        .banner-image::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(to top, rgba(15, 25, 40, 1) 0%, rgba(15, 25, 40, 0.7) 50%, rgba(15, 25, 40, 0.5) 100%);
+        }
+        
+        .ability-card {
+            transition: all 200ms ease;
+        }
+        .ability-card:hover {
+            transform: translateY(-2px);
+        }
+        
+        @keyframes sparkle {
+            0%, 100% { opacity: 0; transform: scale(0) rotate(0deg); }
+            50% { opacity: 1; transform: scale(1) rotate(180deg); }
+        }
+        @keyframes pull-glow {
+            0%, 100% { box-shadow: 0 0 20px rgba(245, 158, 11, 0.3); }
+            50% { box-shadow: 0 0 60px rgba(245, 158, 11, 0.6); }
+        }
+        .pulling {
+            animation: pull-glow 1s ease-in-out infinite;
+        }
+        
+        .result-card {
+            animation: resultReveal 0.5s ease-out forwards;
+        }
+        @keyframes resultReveal {
+            0% { opacity: 0; transform: scale(0.8) rotateY(90deg); }
+            100% { opacity: 1; transform: scale(1) rotateY(0deg); }
+        }
+        
+        .stat-value {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+    </style>
+</head>
+<body class="min-h-screen relative">
+    <div class="grid-lines"></div>
+    <div class="blob orange"></div>
+    <div class="blob blue"></div>
+    <div class="blob purple"></div>
+
+    <div class="relative z-10">
+        <!-- Header -->
+        <header class="max-w-6xl mx-auto px-6 pt-10 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <a href="/dashboard" class="flex items-center gap-3">
+                    <div class="w-11 h-11 rounded-xl bg-amber-500 flex items-center justify-center text-slate-900 font-black text-xl shadow-lg">FA</div>
+                    <div>
+                        <div class="text-sm uppercase tracking-[0.3em] text-amber-300">Fandom Adventurers</div>
+                        <div class="text-lg font-semibold text-slate-100">Gacha</div>
+                    </div>
+                </a>
+            </div>
+            <nav class="flex items-center gap-4">
+                <a href="/dashboard" class="text-slate-300 hover:text-white text-sm">Dashboard</a>
+                <a href="/chapters" class="text-slate-300 hover:text-white text-sm">Chapters</a>
+                <div id="currency-display" class="flex items-center gap-2 bg-purple-500/20 text-purple-300 px-3 py-2 rounded-lg border border-purple-500/30">
+                    <span id="currencyIcon" class="text-lg">✨</span>
+                    <span id="pullsCount" class="font-semibold">0</span>
+                    <span id="currencyName" class="text-xs">Pulls</span>
+                </div>
+            </nav>
+        </header>
+
+        <main class="max-w-6xl mx-auto px-6 py-8">
+            <!-- Title Section -->
+            <div class="text-center mb-8">
+                <div class="inline-flex items-center gap-2 bg-purple-500/10 text-purple-300 px-3 py-2 rounded-full border border-purple-500/30 text-xs uppercase tracking-[0.15em] mb-4">
+                    ✨ PARAMETER GACHA
+                </div>
+                <h1 class="text-4xl sm:text-5xl font-semibold text-white mb-4">Pull for Parameters</h1>
+                <p class="text-slate-400 text-lg max-w-xl mx-auto">Unlock powerful parameters to enhance your characters. Each chapter (starting from Chapter 2) has unique parameters to discover!</p>
+            </div>
+
+            <!-- Chapter Tabs -->
+            <div class="mb-8">
+                <div class="flex flex-wrap justify-center gap-3" id="chapter-tabs">
+                    <!-- Chapter tabs will be generated by JavaScript -->
+                </div>
+            </div>
+
+            <!-- Current Banner -->
+            <div id="banner-section" class="mb-10">
+                <!-- Banner content will be generated by JavaScript -->
+            </div>
+
+            <!-- Pull Buttons -->
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-10">
+                <button id="pull-single" class="pull-btn text-slate-900 px-8 py-4 rounded-xl font-bold text-lg shadow-lg flex items-center gap-3">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                    </svg>
+                    <span>Pull x1</span>
+                    <span class="bg-slate-900/20 px-2 py-1 rounded text-sm">1 Pull</span>
+                </button>
+                <button id="pull-multi" class="pull-btn text-slate-900 px-8 py-4 rounded-xl font-bold text-lg shadow-lg flex items-center gap-3">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                    </svg>
+                    <span>Pull x10</span>
+                    <span class="bg-slate-900/20 px-2 py-1 rounded text-sm">10 Pulls</span>
+                </button>
+            </div>
+
+            <!-- Results Section -->
+            <div id="results-section" class="hidden mb-10">
+                <h2 class="text-2xl font-semibold text-white text-center mb-6">🎉 Results</h2>
+                <div id="results-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+                    <!-- Results will be generated by JavaScript -->
+                </div>
+                <div class="text-center mt-6">
+                    <button id="close-results" class="btn bg-slate-700 hover:bg-slate-600 text-white px-6 py-2 rounded-lg font-semibold">
+                        Continue
+                    </button>
+                </div>
+            </div>
+
+            <!-- Available Abilities Pool -->
+            <div class="glass rounded-2xl p-6 border border-white/10">
+                <h2 class="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path>
+                    </svg>
+                    <span id="pool-title">Chapter 1 Ability Pool</span>
+                </h2>
+                <p class="text-slate-400 text-sm mb-4">These abilities are available in this chapter's gacha pool:</p>
+                <div id="ability-pool" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- Ability cards will be generated by JavaScript -->
+                </div>
+            </div>
+
+            <!-- Rates Info -->
+            <div class="glass rounded-2xl p-6 border border-white/10 mt-6">
+                <h2 class="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    Drop Rates
+                </h2>
+                <div class="grid grid-cols-2 sm:grid-cols-5 gap-4 text-center">
+                    <div class="p-3 rounded-lg bg-slate-800/50 border border-slate-700">
+                        <div class="text-2xl font-bold rarity-common">50%</div>
+                        <div class="text-xs uppercase tracking-wider text-slate-500 mt-1">Common</div>
+                    </div>
+                    <div class="p-3 rounded-lg bg-slate-800/50 border border-slate-700">
+                        <div class="text-2xl font-bold rarity-uncommon">30%</div>
+                        <div class="text-xs uppercase tracking-wider text-slate-500 mt-1">Uncommon</div>
+                    </div>
+                    <div class="p-3 rounded-lg bg-slate-800/50 border border-slate-700">
+                        <div class="text-2xl font-bold rarity-rare">15%</div>
+                        <div class="text-xs uppercase tracking-wider text-slate-500 mt-1">Rare</div>
+                    </div>
+                    <div class="p-3 rounded-lg bg-slate-800/50 border border-slate-700">
+                        <div class="text-2xl font-bold rarity-epic">4%</div>
+                        <div class="text-xs uppercase tracking-wider text-slate-500 mt-1">Epic</div>
+                    </div>
+                    <div class="p-3 rounded-lg bg-slate-800/50 border border-slate-700">
+                        <div class="text-2xl font-bold rarity-legendary">1%</div>
+                        <div class="text-xs uppercase tracking-wider text-slate-500 mt-1">Legendary</div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer class="max-w-6xl mx-auto px-6 py-8 text-center text-slate-500 text-sm">
+            <p>© 2025 Fandom Adventurers. All rights reserved.</p>
+        </footer>
+    </div>
+
+    <script>
+        // Cookie helper functions
+        function getCookie(name) {
+            const value = document.cookie.split('; ').find(row => row.startsWith(name + '='));
+            if (!value) return null;
+            try {
+                return JSON.parse(decodeURIComponent(value.split('=')[1]));
+            } catch {
+                return null;
+            }
+        }
+
+        function getLoggedInUser() {
+            return getCookie('user');
+        }
+
+        // Check authentication
+        const currentUser = getLoggedInUser();
+        if (!currentUser) {
+            window.location.href = '/';
+        }
+
+        // Get chapter from URL params
+        const urlParams = new URLSearchParams(window.location.search);
+        let currentChapter = parseInt(urlParams.get('ch')) || 2; // Default to chapter 2 since chapter 1 has no params
+
+        // Chapter data with parameter pools
+        // Chapter 1 (Mindustry) has NO parameters - it's the tutorial chapter
+        const chapters = [
+            { 
+                id: 1, 
+                title: "Mindustry", 
+                unlocked: true,
+                hasParams: false, // No parameters for this chapter
+                currency: null, // No currency for tutorial
+                currencyName: null,
+                image: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRHJRwVhw1yQo_TJJDIOeKP_7ABUKM6KZL8KkjoA_oZ81kxOLIqdlLJgqxzS050KkdWnAYI&s=10",
+                parameters: []
+            },
+            { 
+                id: 2, 
+                title: "Item Asylum", 
+                unlocked: false,
+                hasParams: true,
+                currency: 10, // Starting currency
+                currencyName: "Chaos Tokens",
+                currencyIcon: "🎲",
+                image: "",
+                parameters: [
+                    { name: "Reparametize", rarity: "uncommon", type: "passive", description: "Heal 2 HP each turn", func: "regeneration" },
+                    { name: "Protection Function", rarity: "uncommon", type: "passive", description: "Reduce dmg by 1", func: "fortify" },
+                    { name: "Charged Attack", rarity: "rare", type: "ability", description: "+3 dmg", func: "powerStrike" },
+                    { name: "Haste Leap", rarity: "common", type: "ability", description: "+1 speed", func: "quickStep" },
+                    { name: "StealPatch", rarity: "epic", type: "ability", description: "Heal on hit", func: "lifesteal" }
+                ]
+            },
+            { 
+                id: 3, 
+                title: "Forsaken", 
+                unlocked: false,
+                hasParams: true,
+                currency: 10,
+                currencyName: "Void Shards",
+                currencyIcon: "🌑",
+                image: "",
+                parameters: [
+                    { name: "Better Body Parameters", rarity: "uncommon", type: "stat", description: "Boost health", func: "bonusHp" },
+                    { name: "Increased net Potency", rarity: "uncommon", type: "stat", description: "Boost attack", func: "bonusDamage" },
+                    { name: "Corrupted", rarity: "rare", type: "ability", description: "Apply 2 Poison on hit", func: "venomous" },
+                    { name: "Net leaking", rarity: "common", type: "ability", description: "Apply 1 Bleed on hit", func: "hemorrhage" }
+                ]
+            },
+            { 
+                id: 4, 
+                title: "Die of Death", 
+                unlocked: false,
+                hasParams: true,
+                currency: 10,
+                currencyName: "Death Dice",
+                currencyIcon: "💀",
+                parameters: [
+                    { name: "Firewalled", rarity: "rare", type: "ability", description: "Apply 2 Burn on hit", func: "searing" },
+                    { name: "Unstable code", rarity: "epic", type: "ability", description: "Apply 1 Rupture on hit", func: "rend" },
+                    { name: "Lucky Dice", rarity: "legendary", type: "passive", description: "20% chance to double damage", func: "luckyStrike" },
+                    { name: "Death's Touch", rarity: "epic", type: "ability", description: "Instant kill below 10% HP", func: "execute" }
+                ]
+            },
+            { 
+                id: 5, 
+                title: "Phasmophobia", 
+                unlocked: false,
+                hasParams: true,
+                currency: 10,
+                currencyName: "Ghost Orbs",
+                currencyIcon: "👻",
+                parameters: [
+                    { name: "Ghost Sense", rarity: "common", type: "passive", description: "Detect enemy weaknesses", func: "analyze" },
+                    { name: "Spirit Link", rarity: "rare", type: "ability", description: "Share damage with ally", func: "soulBond" },
+                    { name: "Haunting", rarity: "epic", type: "ability", description: "Fear enemies, reduce their damage", func: "terrify" },
+                    { name: "Phantom Form", rarity: "legendary", type: "passive", description: "25% chance to dodge attacks", func: "ethereal" }
+                ]
+            },
+            { 
+                id: 6, 
+                title: "Forsaken Part 2", 
+                unlocked: false,
+                hasParams: true,
+                currency: 10,
+                currencyName: "Abyss Fragments",
+                currencyIcon: "🕳️",
+                parameters: [
+                    { name: "Void Shield", rarity: "rare", type: "passive", description: "Absorb first hit each turn", func: "voidBarrier" },
+                    { name: "Noli's Blessing", rarity: "legendary", type: "passive", description: "Revive once per battle with 50% HP", func: "resurrection" },
+                    { name: "Abyss Walker", rarity: "epic", type: "ability", description: "Teleport behind enemy, +2 crit", func: "shadowStep" }
+                ]
+            },
+            { 
+                id: 7, 
+                title: "Project Sekai", 
+                unlocked: false,
+                hasParams: true,
+                currency: 10,
+                currencyName: "Crystal Shards",
+                currencyIcon: "💎",
+                parameters: [
+                    { name: "Harmony", rarity: "common", type: "ability", description: "Heal all allies for 1 HP", func: "groupHeal" },
+                    { name: "Vocal Burst", rarity: "rare", type: "ability", description: "AoE damage to all enemies", func: "soundwave" },
+                    { name: "Fever Mode", rarity: "epic", type: "passive", description: "All stats +1 when HP below 50%", func: "desperado" },
+                    { name: "World is Mine", rarity: "legendary", type: "ability", description: "Triple next attack damage", func: "ultimateStrike" }
+                ]
+            },
+            { 
+                id: 8, 
+                title: "Limbus Company", 
+                unlocked: false,
+                hasParams: true,
+                currency: 10,
+                currencyName: "Enkephalin",
+                currencyIcon: "🧠",
+                parameters: [
+                    { name: "E.G.O Awakening", rarity: "epic", type: "passive", description: "Transform when HP critical", func: "berserk" },
+                    { name: "Sinner's Resolve", rarity: "rare", type: "passive", description: "+2 damage when alone", func: "lastStand" },
+                    { name: "Dante's Command", rarity: "legendary", type: "ability", description: "Force enemy to attack ally", func: "mindControl" },
+                    { name: "Abnormality", rarity: "common", type: "ability", description: "Random effect on hit", func: "chaos" }
+                ]
+            },
+            { 
+                id: 9, 
+                title: "Battle Bricks", 
+                unlocked: false,
+                hasParams: true,
+                currency: 10,
+                currencyName: "Brick Coins",
+                currencyIcon: "🧱",
+                parameters: [
+                    { name: "Brick Wall", rarity: "common", type: "passive", description: "+2 defense", func: "fortification" },
+                    { name: "Demolition", rarity: "rare", type: "ability", description: "Destroy enemy defense", func: "armorBreak" },
+                    { name: "Master Builder", rarity: "epic", type: "ability", description: "Build turret that attacks", func: "summonTurret" },
+                    { name: "Mega Build", rarity: "legendary", type: "passive", description: "Gain shield equal to damage dealt", func: "overShield" }
+                ]
+            },
+            { 
+                id: 10, 
+                title: "Recapitulation", 
+                unlocked: false,
+                hasParams: true,
+                currency: 10,
+                currencyName: "Memory Cores",
+                currencyIcon: "🔮",
+                parameters: [
+                    { name: "Memory Flash", rarity: "common", type: "ability", description: "Repeat last action", func: "echo" },
+                    { name: "Time Loop", rarity: "epic", type: "ability", description: "Reset to turn start once per battle", func: "rewind" },
+                    { name: "Nostalgia", rarity: "rare", type: "passive", description: "Gain buffs from previous chapters", func: "inheritance" },
+                    { name: "Final Recap", rarity: "legendary", type: "ability", description: "Use all unlocked parameters at once", func: "omnibus" }
+                ]
+            }
+        ];
+
+        // Player data - currency per chapter
+        let chapterCurrency = {
+            2: 10,  // Chaos Tokens
+            3: 10,  // Void Shards
+            4: 10,  // Death Dice
+            5: 10,  // Ghost Orbs
+            6: 10,  // Abyss Fragments
+            7: 10,  // Crystal Shards
+            8: 10,  // Enkephalin
+            9: 10,  // Brick Coins
+            10: 10  // Memory Cores
+        };
+        let unlockedParameters = [];
+
+        // Rarity weights for gacha
+        const rarityWeights = {
+            common: 50,
+            uncommon: 30,
+            rare: 15,
+            epic: 4,
+            legendary: 1
+        };
+
+        function getRarityClass(rarity) {
+            return `rarity-${rarity}`;
+        }
+
+        function getRarityBg(rarity) {
+            const bgs = {
+                common: 'bg-slate-500/20 border-slate-500/40',
+                uncommon: 'bg-emerald-500/20 border-emerald-500/40',
+                rare: 'bg-blue-500/20 border-blue-500/40',
+                epic: 'bg-purple-500/20 border-purple-500/40',
+                legendary: 'bg-amber-500/20 border-amber-500/40'
+            };
+            return bgs[rarity] || bgs.common;
+        }
+
+        function getTypeIcon(type) {
+            const icons = {
+                passive: '🛡️',
+                ability: '⚔️',
+                stat: '📊'
+            };
+            return icons[type] || '✨';
+        }
+
+        function getCurrentCurrency() {
+            return chapterCurrency[currentChapter] || 0;
+        }
+
+        function updateCurrencyDisplay() {
+            const chapter = chapters.find(c => c.id === currentChapter);
+            const currencyEl = document.getElementById('currency-display');
+            const pullsEl = document.getElementById('pullsCount');
+            const nameEl = document.getElementById('currencyName');
+            const iconEl = document.getElementById('currencyIcon');
+            
+            if (!chapter || !chapter.hasParams) {
+                currencyEl.classList.add('opacity-50');
+                pullsEl.textContent = '-';
+                nameEl.textContent = 'N/A';
+                iconEl.textContent = '❌';
+            } else {
+                currencyEl.classList.remove('opacity-50');
+                pullsEl.textContent = getCurrentCurrency();
+                nameEl.textContent = chapter.currencyName || 'Pulls';
+                iconEl.textContent = chapter.currencyIcon || '✨';
+            }
+        }
+
+        function renderChapterTabs() {
+            const container = document.getElementById('chapter-tabs');
+            container.innerHTML = '';
+
+            chapters.forEach(chapter => {
+                const tab = document.createElement('button');
+                const isActive = chapter.id === currentChapter;
+                const isLocked = !chapter.unlocked;
+                const noParams = !chapter.hasParams;
+                
+                tab.className = `chapter-tab glass px-4 py-2 rounded-lg border border-white/10 text-sm font-medium ${isActive ? 'active' : ''} ${isLocked || noParams ? 'locked' : ''}`;
+                tab.innerHTML = `
+                    <span class="flex items-center gap-2">
+                        ${isLocked ? '🔒' : noParams ? '❌' : ''}
+                        <span>Ch.${chapter.id}</span>
+                    </span>
+                `;
+                
+                if (!isLocked && chapter.hasParams) {
+                    tab.onclick = () => {
+                        currentChapter = chapter.id;
+                        updateURL();
+                        renderAll();
+                    };
+                }
+                
+                container.appendChild(tab);
+            });
+        }
+
+        function renderBanner() {
+            const container = document.getElementById('banner-section');
+            const chapter = chapters.find(c => c.id === currentChapter);
+            
+            if (!chapter) {
+                container.innerHTML = `
+                    <div class="glass rounded-2xl p-10 border border-white/10 text-center">
+                        <div class="text-6xl mb-4">❓</div>
+                        <h2 class="text-2xl font-semibold text-white mb-2">Chapter Not Found</h2>
+                        <p class="text-slate-400">Select a valid chapter from the tabs above.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            if (!chapter.hasParams) {
+                container.innerHTML = `
+                    <div class="glass rounded-2xl p-10 border border-white/10 text-center">
+                        <div class="text-6xl mb-4">📖</div>
+                        <h2 class="text-2xl font-semibold text-white mb-2">${chapter.title} - Tutorial Chapter</h2>
+                        <p class="text-slate-400">This chapter does not have parameters to pull. It serves as the introduction to the game mechanics.</p>
+                        <p class="text-slate-500 text-sm mt-2">Complete this chapter to unlock Chapter 2 and start collecting parameters!</p>
+                    </div>
+                `;
+                return;
+            }
+
+            if (!chapter.unlocked) {
+                container.innerHTML = `
+                    <div class="glass rounded-2xl p-10 border border-white/10 text-center">
+                        <div class="text-6xl mb-4">🔒</div>
+                        <h2 class="text-2xl font-semibold text-white mb-2">Chapter Locked</h2>
+                        <p class="text-slate-400">Complete previous chapters to unlock this parameter pool.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const featuredParam = chapter.parameters.find(a => a.rarity === 'legendary') || chapter.parameters.find(a => a.rarity === 'epic') || chapter.parameters[0];
+            
+            container.innerHTML = `
+                <div class="banner-card glass rounded-2xl p-8 border border-white/10 relative min-h-[200px]">
+                    <div class="banner-image" style="background-image: url('${chapter.image || ''}')"></div>
+                    <div class="relative z-10">
+                        <div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+                            <div>
+                                <div class="flex items-center gap-2 mb-2">
+                                    <span class="bg-purple-500/20 text-purple-300 px-2 py-1 rounded text-xs uppercase tracking-wider border border-purple-500/30">Chapter ${chapter.id}</span>
+                                    <span class="bg-amber-500/20 text-amber-300 px-2 py-1 rounded text-xs uppercase tracking-wider border border-amber-500/30">Parameter Banner</span>
+                                </div>
+                                <h2 class="text-3xl font-bold text-white mb-2">${chapter.title} Parameters</h2>
+                                <p class="text-slate-300">Pull for unique parameters from the ${chapter.title} universe!</p>
+                                ${featuredParam ? `
+                                <div class="mt-4 flex items-center gap-4">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-amber-400">★</span>
+                                        <span class="text-sm text-slate-300">Featured: <span class="text-amber-400 font-semibold">${featuredParam.name}</span></span>
+                                    </div>
+                                </div>
+                                ` : ''}
+                            </div>
+                            <div class="flex flex-col items-end gap-2">
+                                <div class="text-right">
+                                    <div class="text-sm text-slate-400">Your ${chapter.currencyName || 'Pulls'}</div>
+                                    <div class="text-4xl font-bold stat-value flex items-center gap-2">
+                                        <span>${chapter.currencyIcon || '✨'}</span>
+                                        <span>${getCurrentCurrency()}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderParameterPool() {
+            const container = document.getElementById('ability-pool');
+            const titleEl = document.getElementById('pool-title');
+            const chapter = chapters.find(c => c.id === currentChapter);
+            
+            if (!chapter || !chapter.hasParams) {
+                container.innerHTML = `<p class="text-slate-500 col-span-full text-center py-8">This chapter does not have parameters.</p>`;
+                titleEl.textContent = 'No Parameters Available';
+                return;
+            }
+
+            if (!chapter.unlocked) {
+                container.innerHTML = `<p class="text-slate-500 col-span-full text-center py-8">Unlock this chapter to view the parameter pool.</p>`;
+                titleEl.textContent = 'Locked Chapter';
+                return;
+            }
+
+            titleEl.textContent = `Chapter ${chapter.id}: ${chapter.title} Parameter Pool`;
+            container.innerHTML = '';
+
+            chapter.parameters.forEach(param => {
+                const isOwned = unlockedParameters.includes(`${currentChapter}-${param.name}`);
+                const card = document.createElement('div');
+                card.className = `ability-card glass rounded-xl p-4 border ${getRarityBg(param.rarity)} ${isOwned ? 'opacity-60' : ''}`;
+                card.innerHTML = `
+                    <div class="flex items-start justify-between mb-2">
+                        <span class="text-xs uppercase tracking-wider ${getRarityClass(param.rarity)} font-semibold">${param.rarity}</span>
+                        ${isOwned ? '<span class="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded">Owned</span>' : ''}
+                    </div>
+                    <h3 class="text-lg font-semibold text-white mb-1">${getTypeIcon(param.type)} ${param.name}</h3>
+                    <p class="text-slate-400 text-sm mb-2">${param.description}</p>
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs bg-slate-800 text-slate-400 px-2 py-1 rounded capitalize">${param.type}</span>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function getRandomParameter() {
+            const chapter = chapters.find(c => c.id === currentChapter);
+            if (!chapter || !chapter.hasParams || chapter.parameters.length === 0) return null;
+
+            // Calculate total weight for available rarities
+            const availableRarities = [...new Set(chapter.parameters.map(p => p.rarity))];
+            let totalWeight = 0;
+            for (const rarity of availableRarities) {
+                totalWeight += rarityWeights[rarity] || 0;
+            }
+            
+            let random = Math.random() * totalWeight;
+            
+            // Determine rarity
+            let selectedRarity = 'common';
+            for (const rarity of availableRarities) {
+                random -= (rarityWeights[rarity] || 0);
+                if (random <= 0) {
+                    selectedRarity = rarity;
+                    break;
+                }
+            }
+
+            // Find parameter of that rarity
+            const paramsOfRarity = chapter.parameters.filter(p => p.rarity === selectedRarity);
+            if (paramsOfRarity.length > 0) {
+                return paramsOfRarity[Math.floor(Math.random() * paramsOfRarity.length)];
+            }
+            
+            // Fallback to any parameter
+            return chapter.parameters[Math.floor(Math.random() * chapter.parameters.length)];
+        }
+
+        function performPull(count) {
+            const chapter = chapters.find(c => c.id === currentChapter);
+            if (!chapter || !chapter.unlocked || !chapter.hasParams) return;
+            
+            const currentCurrency = getCurrentCurrency();
+            if (currentCurrency < count) {
+                alert(`Not enough ${chapter.currencyName || 'currency'}!`);
+                return;
+            }
+
+            chapterCurrency[currentChapter] -= count;
+            updateCurrencyDisplay();
+
+            const results = [];
+            for (let i = 0; i < count; i++) {
+                const param = getRandomParameter();
+                if (param) {
+                    results.push(param);
+                    const paramKey = `${currentChapter}-${param.name}`;
+                    if (!unlockedParameters.includes(paramKey)) {
+                        unlockedParameters.push(paramKey);
+                    }
+                }
+            }
+
+            showResults(results);
+            renderBanner();
+            renderParameterPool();
+        }
+
+        function showResults(results) {
+            const section = document.getElementById('results-section');
+            const grid = document.getElementById('results-grid');
+            
+            section.classList.remove('hidden');
+            grid.innerHTML = '';
+
+            results.forEach((param, index) => {
+                const card = document.createElement('div');
+                card.className = `result-card glass rounded-xl p-4 border ${getRarityBg(param.rarity)} text-center`;
+                card.style.animationDelay = `${index * 0.1}s`;
+                card.innerHTML = `
+                    <div class="text-3xl mb-2">${param.rarity === 'legendary' ? '🌟' : param.rarity === 'epic' ? '💎' : param.rarity === 'rare' ? '💠' : param.rarity === 'uncommon' ? '🔹' : '✨'}</div>
+                    <div class="text-xs uppercase tracking-wider ${getRarityClass(param.rarity)} font-semibold mb-1">${param.rarity}</div>
+                    <h3 class="text-sm font-semibold text-white">${param.name}</h3>
+                    <p class="text-xs text-slate-400 mt-1">${param.description}</p>
+                `;
+                grid.appendChild(card);
+            });
+
+            // Scroll to results
+            section.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        function updateURL() {
+            const url = new URL(window.location);
+            url.searchParams.set('ch', currentChapter);
+            window.history.pushState({}, '', url);
+        }
+
+        function renderAll() {
+            renderChapterTabs();
+            renderBanner();
+            renderParameterPool();
+            updatePullButtons();
+            updateCurrencyDisplay();
+        }
+
+        function updatePullButtons() {
+            const chapter = chapters.find(c => c.id === currentChapter);
+            const isLocked = !chapter || !chapter.unlocked;
+            const noParams = !chapter || !chapter.hasParams;
+            const currentCurrency = getCurrentCurrency();
+            
+            document.getElementById('pull-single').disabled = isLocked || noParams || currentCurrency < 1;
+            document.getElementById('pull-multi').disabled = isLocked || noParams || currentCurrency < 10;
+        }
+
+        // Event Listeners
+        document.getElementById('pull-single').addEventListener('click', () => performPull(1));
+        document.getElementById('pull-multi').addEventListener('click', () => performPull(10));
+        document.getElementById('close-results').addEventListener('click', () => {
+            document.getElementById('results-section').classList.add('hidden');
+        });
+
+        // Fetch user data
+        async function fetchUserData() {
+            if (!currentUser) return;
+            
+            try {
+                const res = await fetch(`/api/accounts/${currentUser.username}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    
+                    // Update chapter unlock status and per-chapter currency
+                    Object.keys(data.chapters || {}).forEach(chId => {
+                        const chapterNum = parseInt(chId);
+                        const ch = chapters.find(c => c.id === chapterNum);
+                        if (ch) {
+                            ch.unlocked = data.chapters[chId].unlocked;
+                        }
+                        
+                        // Load per-chapter currency
+                        if (chapterNum > 1 && data.chapters[chId].inventory) {
+                            chapterCurrency[chapterNum] = data.chapters[chId].inventory.currency || 10;
+                        }
+                        
+                        // Load unlocked parameters for this chapter
+                        if (data.chapters[chId].inventory?.unlockedParameters) {
+                            data.chapters[chId].inventory.unlockedParameters.forEach(param => {
+                                const paramKey = `${chapterNum}-${param}`;
+                                if (!unlockedParameters.includes(paramKey)) {
+                                    unlockedParameters.push(paramKey);
+                                }
+                            });
+                        }
+                    });
+                    
+                    updateCurrencyDisplay();
+                }
+            } catch (err) {
+                console.error('Failed to fetch user data:', err);
+            }
+        }
+
+        // If we're on chapter 1 (no params), redirect to chapter 2 by default
+        if (currentChapter === 1) {
+            currentChapter = 2;
+            updateURL();
+        }
+
+        // Initialize
+        fetchUserData().then(() => renderAll());
+    </script>
+</body>
+</html>

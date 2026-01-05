@@ -86,12 +86,111 @@ async function connectToMongo() {
 // Middleware
 app.use(express.json());
 
+// --- Admin HTTP Basic Auth middleware ---
+function checkAdminAuth(req: Request, res: Response, next: NextFunction) {
+    const auth = req.headers.authorization;
+    if (!auth || !auth.startsWith('Basic ')) {
+        res.setHeader('WWW-Authenticate', 'Basic realm="Admin"');
+        return res.status(401).send('Unauthorized');
+    }
+
+    try {
+        const parts = auth.split(' ');
+        const encoded = parts[1] || '';
+        if (!encoded) {
+            throw new Error('Invalid Authorization header');
+        }
+        const creds = Buffer.from(encoded, 'base64').toString('utf8');
+        const [user, pass] = creds.split(':');
+        const adminUser = process.env.ADMIN_USER || 'admin';
+        const adminPass = process.env.ADMIN_PASS || 'changeme';
+
+        if (user === adminUser && pass === adminPass) {
+            return next();
+        }
+    } catch (e) {
+        // fall through to unauthorized
+    }
+
+    res.setHeader('WWW-Authenticate', 'Basic realm="Admin"');
+    return res.status(401).send('Unauthorized');
+}
+
 //this is temporary until we set up proper routing
 //app.use(express.static(path.join(process.cwd(), 'public')));
 
 // Simple health check
 app.get('/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Serve admin UI (protected by Basic Auth)
+app.get('/admin', checkAdminAuth, (req: Request, res: Response) => {
+    return res.sendFile(path.join(process.cwd(), 'public', 'admin.html'));
+});
+
+// Admin API: list all accounts
+app.get('/api/admin/accounts', checkAdminAuth, async (_req: Request, res: Response) => {
+    try {
+        const accounts = await db.collection('accounts').find({}).toArray();
+        return res.json(accounts);
+    } catch (e) {
+        console.error('Failed to fetch accounts:', e);
+        return res.status(500).json({ error: 'Failed to fetch accounts' });
+    }
+});
+
+// Admin API: get single account
+app.get('/api/admin/account/:username', checkAdminAuth, async (req: Request, res: Response) => {
+    try {
+        const username = req.params.username;
+        const account = await db.collection('accounts').findOne({ username });
+        if (!account) return res.status(404).json({ error: 'Account not found' });
+        return res.json(account);
+    } catch (e) {
+        console.error('Failed to fetch account:', e);
+        return res.status(500).json({ error: 'Failed to fetch account' });
+    }
+});
+
+// Admin API: update account (partial)
+app.post('/api/admin/update-account', checkAdminAuth, async (req: Request, res: Response) => {
+    try {
+        const { username, updates } = req.body;
+        if (!username || !updates) return res.status(400).json({ error: 'username and updates required' });
+
+        // Prevent _id modification
+        if (updates._id) delete updates._id;
+
+        const result = await db.collection('accounts').updateOne({ username }, { $set: updates });
+        return res.json({ matched: result.matchedCount, modified: result.modifiedCount });
+    } catch (e) {
+        console.error('Failed to update account:', e);
+        return res.status(500).json({ error: 'Failed to update account' });
+    }
+});
+
+// Admin API: bulk updates array of { filter, update } operations
+app.post('/api/admin/bulk-update', checkAdminAuth, async (req: Request, res: Response) => {
+    try {
+        const ops = req.body.operations;
+        if (!Array.isArray(ops)) return res.status(400).json({ error: 'operations array required' });
+
+        const results: any[] = [];
+        for (const op of ops) {
+            if (!op.filter || !op.update) {
+                results.push({ ok: false, reason: 'missing filter/update' });
+                continue;
+            }
+            const r = await db.collection('accounts').updateMany(op.filter, op.update);
+            results.push({ matched: r.matchedCount, modified: r.modifiedCount });
+        }
+
+        return res.json({ results });
+    } catch (e) {
+        console.error('Bulk update failed:', e);
+        return res.status(500).json({ error: 'Bulk update failed' });
+    }
 });
 
 // ==================== ACCOUNT API ROUTES ====================
@@ -607,6 +706,10 @@ app.get('/combat', (_req: Request, res: Response) => {
 
 app.get('/combat.js', (_req: Request, res: Response) => {
     res.sendFile(path.join(__dirname, 'public', 'combat.js'));
+});
+
+app.get('/gacha', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'gacha.html'));
 });
 
 // API to get parameters from MongoDB
