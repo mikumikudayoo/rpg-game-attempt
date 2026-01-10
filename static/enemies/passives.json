@@ -1,3 +1,10 @@
 {
-    "Aero-Mesh":  { "desc": "Takes 2 less damage from Rolling attacks", "func": "aeroMesh" }
+    "Aero-Mesh":  { "desc": "Takes 2 less damage from Rolling attacks", "func": "aeroMesh" },
+    "Molten Core": { "desc": "Deals 2 damage back to the attacker when hit.", "func": "moltenCore" },
+    "Slag Armor":  { "desc": "Reduces all incoming damage by 3.", "func": "slagArmor" },
+    "Heavy Plating": { "desc": "Cannot be critically hit.", "func": "heavyPlating" },
+    "Turbo Thrusters": { "desc": "Always acts first in turn order.", "func": "turboThrusters" },
+    "Nano-Repair": { "desc": "Heals 15 HP at the end of every turn.", "func": "nanoRepair" },
+    "Vampire": { "desc": "Heals itself for 50% of damage dealt.", "func": "vampire" },
+    "Deflector Field": { "desc": "Reduces Ignore-type damage by 50%.", "func": "deflectorField" }
 }

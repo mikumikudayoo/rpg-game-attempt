@@ -442,22 +442,23 @@ app.post('/api/accounts/:username/levels/:chapter/:level/complete', async (req: 
             return res.status(403).json({ error: 'Level not unlocked yet.' });
         }
         
-        const updateObj: any = {};
-        
+        const setObj: any = {};
+        const incObj: any = {};
+
         // If completing a new level (not replaying)
         if (levelNum === currentLevel) {
-            updateObj[`chapters.${chapterKey}.levelsCompleted`] = levelNum;
-            
+            setObj[`chapters.${chapterKey}.levelsCompleted`] = levelNum;
+
             // If there are more levels, unlock the next one
             if (levelNum < totalLevels) {
-                updateObj[`chapters.${chapterKey}.currentLevel`] = levelNum + 1;
+                setObj[`chapters.${chapterKey}.currentLevel`] = levelNum + 1;
             } else {
                 // Chapter completed!
-                updateObj[`chapters.${chapterKey}.completed`] = true;
-                
+                setObj[`chapters.${chapterKey}.completed`] = true;
+
                 // Unlock next chapter
                 const nextChapterKey = String(chapterNum + 1);
-                updateObj[`chapters.${nextChapterKey}`] = {
+                setObj[`chapters.${nextChapterKey}`] = {
                     unlocked: true,
                     completed: false,
                     currentLevel: 1,
@@ -473,15 +474,24 @@ app.post('/api/accounts/:username/levels/:chapter/:level/complete', async (req: 
                 };
             }
         }
-        
-        // Update stats
-        updateObj['stats.totalBattles'] = (account.stats?.totalBattles || 0) + 1;
-        updateObj['stats.wins'] = (account.stats?.wins || 0) + 1;
-        
-        await db.collection<Account>('accounts').updateOne(
-            { username },
-            { $set: updateObj }
-        );
+
+        // Update stats (use $inc)
+        incObj['stats.totalBattles'] = 1;
+        incObj['stats.wins'] = 1;
+
+        // Reward for clearing a level: base reward scales with chapter number
+        const baseReward = 100 * chapterNum;
+        const previouslyCleared = (chapterData.levelsCompleted || 0) >= levelNum;
+        const reward = previouslyCleared ? Math.floor(baseReward / 2) : baseReward;
+
+        // Add reward to chapter inventory
+        incObj[`chapters.${chapterKey}.inventory.currency`] = reward;
+
+        const updateOps: any = {};
+        if (Object.keys(setObj).length) updateOps.$set = setObj;
+        if (Object.keys(incObj).length) updateOps.$inc = incObj;
+
+        await db.collection<Account>('accounts').updateOne({ username }, updateOps);
         
         const isChapterComplete = levelNum >= totalLevels;
         const nextLevel = levelNum < totalLevels ? levelNum + 1 : null;
@@ -753,9 +763,10 @@ app.get('/api/getParameters', async (_req: Request, res: Response) => {
 });
 
 // API to get character data for a chapter and level
-app.get('/api/getUnits', (req: Request, res: Response) => {
+app.get('/api/getUnits', async (req: Request, res: Response) => {
     const chapterNum = Number(req.query.ch) || 1;
     const levelNum = Number(req.query.lvl) || 1;
+    const username = req.query.username as string | undefined;
     
     try {
         // Load character data
@@ -782,20 +793,84 @@ app.get('/api/getUnits', (req: Request, res: Response) => {
         const passivesPath = path.join(__dirname, 'static', 'enemies', 'passives.json');
         const passives = require(passivesPath);
         
-        // Build PC data with resolved abilities
+        // Build PC data with resolved abilities (optionally apply account levels)
+        // If a username is provided, fetch their characterLevels for this chapter
+        let accountCharacterLevels: number[] | null = null;
+        if (username) {
+            try {
+                const account = await db.collection<Account>('accounts').findOne({ username });
+                if (account) {
+                    const chapterKey = String(chapterNum);
+                    const ch = account.chapters?.[chapterKey];
+                    if (ch && Array.isArray(ch.characterLevels)) {
+                        accountCharacterLevels = ch.characterLevels.slice();
+                    }
+                }
+            } catch (e) {
+                console.warn('Failed to load account for units leveling:', e);
+            }
+        }
+
+        // Build PC data
         const PCs: Record<string, any> = {};
         for (const [name, data] of Object.entries(charsData as Record<string, any>)) {
             const abilityName = data.ability;
-            const abilityData = charAbilities[abilityName] || {};
+            const baseAbility = charAbilities[abilityName] || {};
+
+            // Start from base ability values
+            let damage = baseAbility.damage || 0;
+            let heal = baseAbility.heal || 0;
+            let minroll = baseAbility.minroll || 0;
+            let rolls = baseAbility.rolls || 0;
+
+            // Apply character level modifications if available
+            if (accountCharacterLevels) {
+                // Map characters to consistent index: assume order of Object.keys(charsData)
+                const keys = Object.keys(charsData as Record<string, any>);
+                const charIndex = keys.indexOf(name);
+                const level = (charIndex >= 0 && accountCharacterLevels[charIndex]) ? accountCharacterLevels[charIndex] : 1;
+
+                // Level progression pattern:
+                // First triplet (levels 2..4):
+                //  - step 1: +1 to max roll (`rolls`)
+                //  - step 2: +2 to damage
+                //  - step 3: +1 to min roll (`minroll`)
+                // After that, repeat triplets where each triplet is:
+                //  - step 1: +2 to max roll
+                //  - step 2: +4 to damage
+                //  - step 3: +1 to min roll
+                // We iterate each level-up step (starting at 1 for level->level+1) and apply the appropriate change.
+
+                const baseDamage = damage;
+                const upgrades = level - 1; // number of level-up steps applied to reach `level` from 1
+                for (let step = 1; step <= upgrades; step++) {
+                    const tripletIndex = Math.floor((step - 1) / 3); // 0 = first special triplet, >=1 = repeated triplets
+                    const pos = (step - 1) % 3; // 0 => roll increase, 1 => damage increase, 2 => minroll increase
+
+                    if (pos === 0) {
+                        // max roll increase
+                        const addRolls = tripletIndex === 0 ? 1 : 2;
+                        rolls = (rolls || 0) + addRolls;
+                    } else if (pos === 1) {
+                        // damage increase
+                        const addDmg = tripletIndex === 0 ? 2 : 4;
+                        damage += addDmg;
+                    } else if (pos === 2) {
+                        // min roll increase
+                        minroll = (minroll || 0) + 1;
+                    }
+                }
+            }
+
             PCs[name] = {
                 maxHp: data.maxHp,
                 role: data.role,
                 ability: {
-                    damage: abilityData.damage || 0,
-                    heal: abilityData.heal || 0,
-                    minroll: abilityData.minroll || 0,
-                    rolls: abilityData.rolls || 0,
-                    type: abilityData.type || "Adaptive",
+                    damage,
+                    heal,
+                    minroll,
+                    rolls,
+                    type: baseAbility.type || "Adaptive",
                     effect: abilityName
                 }
             };
@@ -933,4 +1008,68 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 app.listen(PORT, async () => {
     await connectToMongo();
     console.log(`Server listening on http://localhost:${PORT}`);
+});
+
+// Level up a character for a user's chapter
+app.post('/api/accounts/:username/level-up', async (req: Request, res: Response) => {
+    try {
+        const { username } = req.params;
+        const { chapter, charIndex } = req.body;
+
+        if (!chapter || (charIndex === undefined || charIndex === null)) {
+            return res.status(400).json({ error: 'chapter and charIndex are required' });
+        }
+
+        const chapterKey = String(chapter);
+
+        const account = await db.collection<Account>('accounts').findOne({ username });
+        if (!account) return res.status(404).json({ error: 'Account not found' });
+
+        // Ensure chapter object exists
+        if (!account.chapters) account.chapters = {} as any;
+        if (!account.chapters[chapterKey]) {
+            account.chapters[chapterKey] = {
+                unlocked: true,
+                completed: false,
+                currentLevel: 1,
+                levelsCompleted: 0,
+                totalLevels: getChapterLevelCount(Number(chapterKey)),
+                savedProgress: null,
+                characterLevels: [1,1,1,1,1],
+                inventory: { currency: 1000, pulls: 10, unlockedAbilities: [] }
+            } as ChapterProgress;
+        }
+
+        const levels = account.chapters[chapterKey].characterLevels || [1,1,1,1,1];
+        const idx = Number(charIndex);
+        if (idx < 0 || idx >= levels.length) return res.status(400).json({ error: 'Invalid charIndex' });
+
+        const currentCharLevel = (levels[idx] || 1);
+        // cost formula: base 100 scaled by 1.25^(level-1)
+        const baseCost = 100;
+        const cost = Math.max(1, Math.round(baseCost * Math.pow(1.25, currentCharLevel - 1)));
+
+        // Ensure inventory exists
+        if (!account.chapters[chapterKey].inventory) account.chapters[chapterKey].inventory = { currency: 0, pulls: 0, unlockedAbilities: [] } as any;
+        const currentCurrency = account.chapters[chapterKey].inventory.currency || 0;
+
+        if (currentCurrency < cost) {
+            return res.status(402).json({ error: 'Insufficient currency', required: cost, current: currentCurrency });
+        }
+
+        // Deduct cost and increment level
+        levels[idx] = currentCharLevel + 1;
+
+        const updatePath = `chapters.${chapterKey}.characterLevels`;
+        const currencyPath = `chapters.${chapterKey}.inventory.currency`;
+        await db.collection<Account>('accounts').updateOne(
+            { username },
+            { $set: { [updatePath]: levels }, $inc: { [currencyPath]: -cost } }
+        );
+
+        return res.json({ message: 'Levelled up', characterLevels: levels, cost, remaining: currentCurrency - cost });
+    } catch (e) {
+        console.error('Level up error:', e);
+        return res.status(500).json({ error: 'Failed to level up' });
+    }
 });

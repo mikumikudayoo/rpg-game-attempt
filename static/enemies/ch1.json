@@ -1,5 +1,17 @@
 {
     "Dagger":   { "maxHp": 15, "name": "Dagger",    "abilities": ["Dagger Flurry"],   "passives": {} },
     "Flare":    { "maxHp": 12, "name": "Flare",     "abilities": ["Flare Burst"],     "passives": {} },
-    "Crawler":  { "maxHp": 20, "name": "Crawler",   "abilities": ["Rend Bite", "Crushing Swing"],       "passives": {} }
+    "Crawler":  { "maxHp": 20, "name": "Crawler",   "abilities": ["Rend Bite", "Crushing Swing"],       "passives": {} },
+
+    "Horizon":  { "maxHp": 18, "name": "Horizon",   "abilities": ["Horizon Shot"],   "passives": { "Aero-Mesh": true } },
+    "Mace":     { "maxHp": 28, "name": "Mace",      "abilities": ["Mace Smash"],     "passives": { "Molten Core": true } },
+    "Atrax":    { "maxHp": 45, "name": "Atrax",     "abilities": ["Atrax Strike"],   "passives": { "Slag Armor": true } },
+
+    "Fortress": { "maxHp": 120,"name": "Fortress",  "abilities": ["Cannon Blast","Artillery Strike"], "passives": { "Heavy Plating": true } },
+
+    "Zenith":   { "maxHp": 80, "name": "Zenith",    "abilities": ["Zenith Beam"],    "passives": { "Turbo Thrusters": true } },
+    "Scepter":  { "maxHp": 140,"name": "Scepter",   "abilities": ["Scepter Lance"],  "passives": { "Nano-Repair": true } },
+    "Antumbra": { "maxHp": 160,"name": "Antumbra",  "abilities": ["Antumbra Slash"], "passives": { "Vampire": true } },
+
+    "Eclipse":  { "maxHp": 350,"name": "Eclipse",   "abilities": ["Main Laser","Flak Cannons","Crash Landing"], "passives": { "Deflector Field": true } }
 }

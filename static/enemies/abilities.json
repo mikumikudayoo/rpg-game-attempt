@@ -2,5 +2,20 @@
     "Dagger Flurry":  { "damage": 5,  "minroll": 0, "rolls": 3, "type": "Rolling" },
     "Flare Burst":    { "damage": 3,  "minroll": 0, "rolls": 0, "type": "Ignore" },
     "Crushing Swing": { "damage": 8,  "minroll": 0, "rolls": 4, "type": "Rolling" },
-    "Rend Bite":      { "damage": 10, "minroll": 0, "rolls": 2, "type": "Rolling" }
+    "Rend Bite":      { "damage": 10, "minroll": 0, "rolls": 1, "type": "Rolling" }
+
+    ,"Horizon Shot": { "damage": 4,  "minroll": 0, "rolls": 0, "type": "Ignore" },
+    "Mace Smash":   { "damage": 8,  "minroll": 2, "rolls": 3, "type": "Rolling" },
+    "Atrax Strike": { "damage": 10, "minroll": 3, "rolls": 5, "type": "Rolling" },
+
+    "Cannon Blast":    { "damage": 20, "minroll": 9, "rolls": 5, "type": "Rolling" },
+    "Artillery Strike":{ "damage": 12, "minroll": 0, "rolls": 0, "type": "Ignore" },
+
+    "Zenith Beam":   { "damage": 12, "minroll": 0, "rolls": 0, "type": "Ignore" },
+    "Scepter Lance": { "damage": 30, "minroll": 12, "rolls": 9, "type": "Rolling" },
+    "Antumbra Slash":{ "damage": 22, "minroll": 0, "rolls": 0, "type": "Ignore" },
+
+    "Main Laser":    { "damage": 40, "minroll": 0, "rolls": 0, "type": "Ignore" },
+    "Flak Cannons":  { "damage": 20, "minroll": 0, "rolls": 0, "type": "Ignore" },
+    "Crash Landing": { "damage": 35, "minroll": 15, "rolls": 15, "type": "Rolling" }
 }

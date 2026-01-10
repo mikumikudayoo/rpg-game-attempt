@@ -267,6 +267,16 @@ function processStatusEffectsTurnEnd() {
             StatusEffectFunctions.tickRupture(unitId);
             StatusEffectFunctions.tickWeaken(unitId);
             StatusEffectFunctions.tickVulnerable(unitId);
+            // Nano-Repair passive: heal 15 HP at end of turn
+            try {
+                if (Array.isArray(unit.passives) && unit.passives.includes('Nano-Repair')) {
+                    const healAmt = 15;
+                    unit.hp = Math.min(unit.maxHp, unit.hp + healAmt);
+                    spawnFloatText(unitId, `+${healAmt}`, 'text-emerald-400');
+                    log(`${unit.name} repairs ${healAmt} HP (Nano-Repair).`, 'heal');
+                    updateUI(unitId);
+                }
+            } catch (e) {}
         }
     });
 }
@@ -432,7 +442,15 @@ function getUrlParams() {
 // Fetch unit data from server
 async function fetchUnitData(chapter = 1, level = 1) {
     try {
-        const res = await fetch(`/api/getUnits?ch=${chapter}&lvl=${level}`);
+        // Include logged-in username so server returns abilities with applied server-side levels
+        let usernameParam = '';
+        try {
+            const user = getLoggedInUser && typeof getLoggedInUser === 'function' ? getLoggedInUser() : null;
+            if (user && user.username) usernameParam = `&username=${encodeURIComponent(user.username)}`;
+        } catch (e) {
+            // ignore
+        }
+        const res = await fetch(`/api/getUnits?ch=${chapter}&lvl=${level}${usernameParam}`);
         if (!res.ok) throw new Error("Failed to fetch unit data");
         const data = await res.json();
         UnitData.PCs = data.PCs || {};
@@ -1032,6 +1050,9 @@ async function resolveCombat() {
     if(checkWinLoss()) return;
     await wait(300);
 
+    // --- TURBO THRUSTERS: enemies with this passive act before players regardless of speed ---
+    try { await resolveTurboThrusters(); } catch (e) { /* ignore */ }
+
     // --- PLAYER INITIATED ACTIONS ---
     const playerOrder = Array.isArray(GameState.turnOrder) && GameState.turnOrder.length > 0
         ? GameState.turnOrder.slice()
@@ -1197,6 +1218,58 @@ async function resolveDuel(srcId, tgtId, visualTgtId = null, visualSrcId = null)
     await wait(800);
     GameState.visualActions = GameState.visualActions.filter(v => v !== vis);
     document.querySelectorAll('.winner, .loser').forEach(el => el.classList.remove('winner', 'loser'));
+}
+
+// Resolve actions for enemies with Turbo Thrusters passive before player actions
+async function resolveTurboThrusters() {
+    const turboEnemies = Object.keys(GameState.units).filter(k => k.startsWith('EN') && GameState.units[k].hp>0 && Array.isArray(GameState.units[k].passives) && GameState.units[k].passives.includes('Turbo Thrusters'));
+    if (turboEnemies.length === 0) return;
+    document.getElementById('turn-indicator').innerText = "ENEMY (PRIORITY)";
+    log("--- Turbo Thrusters engage (enemy priority) ---", 'sys');
+
+    for (const enId of turboEnemies) {
+        const en = GameState.units[enId];
+        if (!en || en.hp <= 0) continue;
+
+        // For each ability box (or default ability) attack a target
+        const boxes = Object.keys(GameState.abilityTargets).filter(b => GameState.abilityTargets[b] === enId);
+        const abilities = (Array.isArray(en.abilities) && en.abilities.length>0) ? en.abilities : [en.ability];
+
+        for (let i=0;i<Math.max(1, abilities.length); i++) {
+            const ability = abilities[i] || en.ability;
+
+            // choose planned target if exists
+            const boxId = boxes[i] || `${enId}_AB_${i}`;
+            let tgtId = null;
+            const planned = GameState.enemyActions && GameState.enemyActions[boxId];
+            if (planned) {
+                const resolved = GameState.abilityTargets[planned.tgt] || planned.tgt;
+                if (resolved && GameState.units[resolved] && GameState.units[resolved].hp > 0) tgtId = resolved;
+            }
+            if (!tgtId) {
+                const targets = Object.keys(GameState.units).filter(k => k.startsWith('PC') && GameState.units[k].hp > 0);
+                if (targets.length === 0) break;
+                tgtId = targets[Math.floor(Math.random() * targets.length)];
+            }
+
+            // Visual
+            document.getElementById(enId).classList.add('acting');
+            const vis = { src: boxId, tgt: tgtId, color: '#b91c1c' };
+            GameState.visualActions.push(vis);
+            await wait(400);
+
+            await applyDamageWithIndicators(enId, tgtId, ability.damage);
+            const abilityName = ability.name || 'A1';
+            log(`${en.name} (${abilityName}) priority hit on ${GameState.units[tgtId].name}.`, 'dmg');
+
+            GameState.visualActions = GameState.visualActions.filter(v => v !== vis);
+            document.getElementById(enId).classList.remove('acting');
+            GameState.actedEnemies.add(enId);
+            checkDeaths();
+            await wait(300);
+            if (checkWinLoss()) return;
+        }
+    }
 }
 
 async function resolveUnengagedEnemies() {
@@ -1672,6 +1745,41 @@ const PassiveFunctions = {
     aeroMesh: ({ sourceId, targetId, damage }) => {
         return Math.max(0, damage - 2);
     }
+    ,
+    slagArmor: ({ sourceId, targetId, damage }) => {
+        return Math.max(0, damage - 3);
+    }
+    ,
+    moltenCore: ({ sourceId, targetId, damage }) => {
+        // Molten Core is reactive (handled elsewhere), does not modify incoming damage here
+        return damage;
+    }
+    ,
+    vampire: ({ sourceId, targetId, damage }) => {
+        // Vampire is reactive (heals on hit), does not modify damage here
+        return damage;
+    }
+    ,
+    nanoRepair: ({ sourceId, targetId, damage }) => {
+        // Nano-Repair heals at end of turn; no incoming damage modification
+        return damage;
+    }
+    ,
+    heavyPlating: ({ sourceId, targetId, damage }) => {
+        // Heavy Plating placeholder: no crit system implemented, so no change
+        return damage;
+    }
+    ,
+    deflectorField: ({ sourceId, targetId, damage }) => {
+        // If attacker uses Ignore-type ability, halve the damage
+        try {
+            const attacker = GameState.units[sourceId];
+            if (attacker && attacker.ability && attacker.ability.type === 'Ignore') {
+                return Math.floor(damage / 2);
+            }
+        } catch (e) {}
+        return damage;
+    }
 };
 
 // Compute final damage taking defender passive names into account
@@ -1756,7 +1864,38 @@ async function applyDamageWithIndicators(sourceId, targetId, baseDamage, color =
         StatusEffectFunctions.checkRupture(targetId, detail.final);
     }
     
+    // Trigger passive reactions that occur on-hit (reflect, lifesteal, etc.)
+    if (detail.final > 0) {
+        try {
+            triggerPassiveOnHit(sourceId, targetId, detail.final);
+        } catch (e) { /* silent */ }
+    }
+    
     return detail.final;
+}
+
+// Handle passive reactions after a successful hit (client-side visual/effect handling)
+function triggerPassiveOnHit(sourceId, targetId, damageDealt) {
+    const attacker = GameState.units[sourceId];
+    const defender = GameState.units[targetId];
+    if (!attacker || !defender) return;
+
+    // Defender passives: Molten Core -> deal 2 damage back to attacker
+    if (Array.isArray(defender.passives) && defender.passives.includes('Molten Core')) {
+        const refl = 2;
+        applyDamage(sourceId, refl);
+        spawnFloatText(sourceId, `-${refl}`, 'text-orange-400');
+        log(`${defender.name} burns ${attacker.name} for ${refl} damage (Molten Core).`, 'sys');
+    }
+
+    // Attacker passives: Vampire -> heal attacker for 50% of damage dealt
+    if (Array.isArray(attacker.passives) && attacker.passives.includes('Vampire')) {
+        const healAmt = Math.floor(damageDealt * 0.5);
+        if (healAmt > 0) {
+            applyHeal(sourceId, healAmt);
+            log(`${attacker.name} heals ${healAmt} HP (Vampire).`, 'heal');
+        }
+    }
 }
 
 function checkWinLoss() {

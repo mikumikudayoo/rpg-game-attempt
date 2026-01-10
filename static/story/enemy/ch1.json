@@ -11,6 +11,114 @@
         {
             "level": 3,
             "enemies": ["Crawler"]
+        },
+        {
+            "level": 4,
+            "enemies": ["Dagger", "Flare", "Dagger"]
+        },
+        {
+            "level": 5,
+            "enemies": ["Horizon", "Dagger"]
+        },
+        {
+            "level": 6,
+            "enemies": ["Crawler", "Crawler"]
+        },
+        {
+            "level": 7,
+            "enemies": ["Flare", "Crawler"]
+        },
+        {
+            "level": 8,
+            "enemies": ["Mace"]
+        },
+        {
+            "level": 9,
+            "enemies": ["Dagger", "Dagger", "Flare"]
+        },
+        {
+            "level": 10,
+            "enemies": ["Crawler", "Mace"]
+        },
+        {
+            "level": 11,
+            "enemies": ["Dagger", "Horizon"]
+        },
+        {
+            "level": 12,
+            "enemies": ["Atrax"]
+        },
+        {
+            "level": 13,
+            "enemies": ["Atrax", "Dagger"]
+        },
+        {
+            "level": 14,
+            "enemies": ["Mace", "Crawler"]
+        },
+        {
+            "level": 15,
+            "enemies": ["Fortress", "Fortress"]
+        },
+        {
+            "level": 16,
+            "enemies": ["Dagger", "Dagger", "Mace"]
+        },
+        {
+            "level": 17,
+            "enemies": ["Zenith"]
+        },
+        {
+            "level": 18,
+            "enemies": ["Zenith", "Flare"]
+        },
+        {
+            "level": 19,
+            "enemies": ["Atrax", "Mace"]
+        },
+        {
+            "level": 20,
+            "enemies": ["Crawler", "Crawler", "Dagger"]
+        },
+        {
+            "level": 21,
+            "enemies": ["Scepter"]
+        },
+        {
+            "level": 22,
+            "enemies": ["Scepter", "Dagger"]
+        },
+        {
+            "level": 23,
+            "enemies": ["Scepter", "Mace"]
+        },
+        {
+            "level": 24,
+            "enemies": ["Antumbra"]
+        },
+        {
+            "level": 25,
+            "enemies": ["Antumbra", "Flare"]
+        },
+        {
+            "level": 26,
+            "enemies": ["Mace", "Mace"]
+        },
+        {
+            "level": 27,
+            "enemies": ["Atrax", "Atrax"]
+        },
+        {
+            "level": 28,
+            "enemies": ["Antumbra", "Scepter"]
+        },
+        {
+            "level": 29,
+            "enemies": ["Fortress"]
+        },
+        {
+            "level": 30,
+            "enemies": ["Eclipse"]
         }
     ]
 }
