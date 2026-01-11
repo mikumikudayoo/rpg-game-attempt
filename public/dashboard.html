@@ -128,15 +128,14 @@
                     <p class="text-slate-400 text-sm">Continue your adventure through the chapters and uncover the mystery.</p>
                 </a>
 
-                <div class="menu-card glass rounded-2xl p-6 border border-white/10 opacity-60 cursor-not-allowed">
+                <div id="open-roster" class="menu-card glass rounded-2xl p-6 border border-white/10 block cursor-pointer">
                     <div class="w-14 h-14 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-300 mb-4">
                         <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
                         </svg>
                     </div>
                     <h3 class="text-xl font-semibold text-white mb-2">Team Builder</h3>
-                    <p class="text-slate-400 text-sm">Manage your roster and customize your team composition.</p>
-                    <span class="inline-block mt-3 text-xs uppercase tracking-wider text-slate-500 bg-slate-800 px-2 py-1 rounded">Coming Soon</span>
+                    <p class="text-slate-400 text-sm">Manage your roster and customize your team composition (per-chapter).</p>
                 </div>
 
                 <a href="/gacha" class="menu-card glass rounded-2xl p-6 border border-white/10 block">
@@ -234,6 +233,155 @@
             deleteCookie('user');
             window.location.href = '/';
         });
+
+        // Chapter metadata for currency names (matches gacha)
+        const chapterMeta = {
+            1: { title: "Mindustry", currencyName: "Surge Alloy", currencyIcon: "⚡" },
+            2: { title: "Item Asylum", currencyName: "Chaos Tokens", currencyIcon: "🎲" },
+            3: { title: "Forsaken", currencyName: "Void Shards", currencyIcon: "🌑" },
+            4: { title: "Die of Death", currencyName: "Death Dice", currencyIcon: "💀" },
+            5: { title: "Phasmophobia", currencyName: "Ghost Orbs", currencyIcon: "👻" },
+            6: { title: "Forsaken Part 2", currencyName: "Abyss Fragments", currencyIcon: "🕳️" },
+            7: { title: "Project Sekai", currencyName: "Crystal Shards", currencyIcon: "💎" },
+            8: { title: "Limbus Company", currencyName: "Enkephalin", currencyIcon: "🧠" },
+            9: { title: "Battle Bricks", currencyName: "Brick Coins", currencyIcon: "🧱" },
+            10: { title: "Recapitulation", currencyName: "Memory Cores", currencyIcon: "🔮" }
+        };
+
+        // Roster panel (per-chapter)
+        let selectedRosterChapter = 1;
+        const rosterPanel = document.createElement('div');
+        rosterPanel.id = 'roster-panel';
+        rosterPanel.className = 'fixed inset-0 z-50 flex items-center justify-center p-6';
+        rosterPanel.style.display = 'none';
+        rosterPanel.innerHTML = `
+            <div class="glass rounded-2xl p-6 w-full max-w-2xl relative">
+                <button id="close-roster" style="position:absolute;right:12px;top:12px;" class="text-slate-400">Close</button>
+                <h3 class="text-xl font-semibold mb-4">Character Roster</h3>
+                <div class="flex items-center justify-between mb-4 gap-4 flex-wrap">
+                    <div class="flex items-center gap-2">
+                        <label for="roster-chapter-select" class="text-sm text-slate-300">Chapter:</label>
+                        <select id="roster-chapter-select" class="bg-slate-800 border border-slate-600 text-white rounded px-2 py-1 text-sm"></select>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <div id="chapter-currency" class="text-sm text-amber-300">--</div>
+                        <div id="chapter-pulls" class="text-sm text-slate-400">Pulls: --</div>
+                    </div>
+                </div>
+                <div id="roster-list" class="space-y-3 max-h-72 overflow-auto"></div>
+                <div class="mt-4 text-sm text-slate-400">Leveling uses this chapter's currency.</div>
+            </div>
+        `;
+        document.body.appendChild(rosterPanel);
+
+        document.getElementById('open-roster').addEventListener('click', openRoster);
+        rosterPanel.querySelector('#close-roster').addEventListener('click', () => { rosterPanel.style.display = 'none'; });
+
+        async function openRoster(chapterOverride) {
+            if (!user) return;
+            rosterPanel.style.display = 'flex';
+
+            try {
+                const accRes = await fetch(`/api/accounts/${user.username}`);
+                if (!accRes.ok) return;
+                const accJson = await accRes.json();
+                const account = accJson.account || accJson;
+
+                // Build chapter select options (all unlocked chapters)
+                const select = rosterPanel.querySelector('#roster-chapter-select');
+                const unlockedChapters = [];
+                for (let i = 1; i <= 10; i++) {
+                    const cp = account.chapterProgress && account.chapterProgress.find(c => c.chapterId === i);
+                    if (cp && cp.unlocked) unlockedChapters.push(i);
+                    else if (i === 1) unlockedChapters.push(1); // chapter 1 always unlocked
+                }
+                // Use override or default to current chapter
+                if (typeof chapterOverride === 'number') {
+                    selectedRosterChapter = chapterOverride;
+                } else if (!unlockedChapters.includes(selectedRosterChapter)) {
+                    selectedRosterChapter = unlockedChapters[0] || 1;
+                }
+                select.innerHTML = unlockedChapters.map(ch => {
+                    const meta = chapterMeta[ch] || { title: `Chapter ${ch}` };
+                    return `<option value="${ch}" ${ch === selectedRosterChapter ? 'selected' : ''}>${ch}. ${meta.title}</option>`;
+                }).join('');
+                select.onchange = () => { selectedRosterChapter = Number(select.value); openRoster(selectedRosterChapter); };
+
+                const chapter = selectedRosterChapter;
+                const chapterKey = String(chapter);
+                const chapterData = (account.chapters && account.chapters[chapterKey]) || { inventory: { currency: 0, pulls: 0 } };
+                const meta = chapterMeta[chapter] || { currencyName: "Currency", currencyIcon: "✨" };
+                const currencyEl = rosterPanel.querySelector('#chapter-currency');
+                const pullsEl = rosterPanel.querySelector('#chapter-pulls');
+                const currencyVal = chapterData.inventory && chapterData.inventory.currency != null ? chapterData.inventory.currency : 0;
+                const pullsVal = chapterData.inventory && chapterData.inventory.pulls != null ? chapterData.inventory.pulls : 0;
+                if (meta.currencyName) {
+                    currencyEl.textContent = `${meta.currencyIcon} ${currencyVal} ${meta.currencyName}`;
+                } else {
+                    currencyEl.textContent = `(Tutorial – no currency)`;
+                }
+                pullsEl.textContent = `Pulls: ${pullsVal}`;
+
+                // Get units (with username so abilities reflect levels)
+                const unitsRes = await fetch(`/api/getUnits?ch=${chapter}&lvl=1&username=${encodeURIComponent(user.username)}`);
+                const unitsJson = await unitsRes.json();
+                const PCs = unitsJson.PCs || {};
+
+                // Get character levels from account
+                const charLevels = (account.chapters && account.chapters[chapterKey] && account.chapters[chapterKey].characterLevels) || [];
+
+                const list = rosterPanel.querySelector('#roster-list');
+                list.innerHTML = '';
+                const names = Object.keys(PCs);
+                names.forEach((name, idx) => {
+                    const pc = PCs[name];
+                    const level = charLevels[idx] || 1;
+                    const minRoll = pc.ability.minroll || 0;
+                    const maxRoll = minRoll + (pc.ability.rolls || 0);
+                    // Cost formula: base 100 + 50 per level (100, 150, 200, 250...)
+                    const levelUpCost = 100 + 50 * (level - 1);
+                    const item = document.createElement('div');
+                    item.className = 'flex items-center justify-between bg-white/5 p-3 rounded-lg';
+                    item.innerHTML = `
+                        <div>
+                            <div class="font-semibold">${name} <span class="text-sm text-slate-400">(Lv ${level})</span></div>
+                            <div class="text-xs text-slate-300">Damage: ${pc.ability.damage} · Rolls: ${minRoll}-${maxRoll}</div>
+                        </div>
+                        <div class="text-right">
+                            <button data-idx="${idx}" class="level-up btn bg-amber-500 text-slate-900 px-3 py-1 rounded">Level Up</button>
+                            <div class="text-xs text-slate-400 mt-1">Cost: ${levelUpCost}</div>
+                        </div>
+                    `;
+                    list.appendChild(item);
+                });
+
+                // Wire up level up buttons
+                rosterPanel.querySelectorAll('.level-up').forEach(b => {
+                    b.addEventListener('click', async (ev) => {
+                        const i = Number(ev.currentTarget.getAttribute('data-idx'));
+                        try {
+                            const r = await fetch(`/api/accounts/${user.username}/level-up`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ chapter, charIndex: i })
+                            });
+                            if (!r.ok) {
+                                alert('Failed to level up');
+                                return;
+                            }
+                            // refresh roster
+                            openRoster();
+                        } catch (e) {
+                            console.error(e);
+                            alert('Level up failed');
+                        }
+                    });
+                });
+
+            } catch (err) {
+                console.error('Failed to open roster:', err);
+            }
+        }
     </script>
 </body>
 </html>

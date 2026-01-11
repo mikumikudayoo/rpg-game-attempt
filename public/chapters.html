@@ -117,9 +117,6 @@
             </nav>
         </header>
 
-        <!-- Roster Button -->
-        <button id="open-roster" class="fixed right-6 bottom-6 bg-amber-500 text-slate-900 px-4 py-3 rounded-full font-semibold shadow-lg z-50">Roster</button>
-
         <main class="max-w-6xl mx-auto px-6 py-12">
             <div class="text-center mb-12">
                 <div class="inline-flex items-center gap-2 bg-amber-500/10 text-amber-300 px-3 py-2 rounded-full border border-amber-500/30 text-xs uppercase tracking-[0.15em] mb-4">
@@ -256,93 +253,6 @@
 
         // Initialize
         fetchProgress().then(() => renderChapters());
-
-        // Roster UI
-        const rosterBtn = document.getElementById('open-roster');
-        const rosterPanel = document.createElement('div');
-        rosterPanel.id = 'roster-panel';
-        rosterPanel.className = 'fixed inset-0 z-50 flex items-center justify-center p-6';
-        rosterPanel.style.display = 'none';
-        rosterPanel.innerHTML = `
-            <div class="glass rounded-2xl p-6 w-full max-w-2xl relative">
-                <button id="close-roster" style="position:absolute;right:12px;top:12px;" class="text-slate-400">Close</button>
-                <h3 class="text-xl font-semibold mb-4">Character Roster</h3>
-                <div id="roster-list" class="space-y-3 max-h-72 overflow-auto"></div>
-                <div class="mt-4 text-sm text-slate-400">Leveling alternates between increasing min-roll and increasing damage.</div>
-            </div>
-        `;
-        document.body.appendChild(rosterPanel);
-
-        rosterBtn.addEventListener('click', openRoster);
-        rosterPanel.querySelector('#close-roster').addEventListener('click', () => { rosterPanel.style.display = 'none'; });
-
-        async function openRoster() {
-            if (!currentUser) return;
-            rosterPanel.style.display = 'flex';
-
-            try {
-                const accRes = await fetch(`/api/accounts/${currentUser.username}`);
-                if (!accRes.ok) return;
-                const accJson = await accRes.json();
-                const account = accJson.account || accJson; // handle varied responses
-                const chapter = account.currentChapter || 1;
-
-                // Get units (with username so abilities reflect levels)
-                const unitsRes = await fetch(`/api/getUnits?ch=${chapter}&lvl=1&username=${encodeURIComponent(currentUser.username)}`);
-                const unitsJson = await unitsRes.json();
-                const PCs = unitsJson.PCs || {};
-
-                // Get character levels from account
-                const chapterKey = String(chapter);
-                const charLevels = (account.chapters && account.chapters[chapterKey] && account.chapters[chapterKey].characterLevels) || [];
-
-                const list = rosterPanel.querySelector('#roster-list');
-                list.innerHTML = '';
-                const names = Object.keys(PCs);
-                names.forEach((name, idx) => {
-                    const pc = PCs[name];
-                    const level = charLevels[idx] || 1;
-                    const item = document.createElement('div');
-                    item.className = 'flex items-center justify-between bg-white/5 p-3 rounded-lg';
-                    item.innerHTML = `
-                        <div>
-                            <div class="font-semibold">${name} <span class="text-sm text-slate-400">(Lv ${level})</span></div>
-                            <div class="text-xs text-slate-300">Damage: ${pc.ability.damage} · MinRoll: ${pc.ability.minroll}</div>
-                        </div>
-                        <div>
-                            <button data-idx="${idx}" class="level-up btn bg-amber-500 text-slate-900 px-3 py-1 rounded">Level Up</button>
-                        </div>
-                    `;
-                    list.appendChild(item);
-                });
-
-                // Wire up level up buttons
-                rosterPanel.querySelectorAll('.level-up').forEach(b => {
-                    b.addEventListener('click', async (ev) => {
-                        const i = Number(ev.currentTarget.getAttribute('data-idx'));
-                        try {
-                            const r = await fetch(`/api/accounts/${currentUser.username}/level-up`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ chapter, charIndex: i })
-                            });
-                            if (!r.ok) {
-                                alert('Failed to level up');
-                                return;
-                            }
-                            // refresh roster
-                            openRoster();
-                        } catch (e) {
-                            console.error(e);
-                            alert('Level up failed');
-                        }
-                    });
-                });
-
-            } catch (err) {
-                console.error('Failed to open roster:', err);
-            }
-        }
     </script>
 </body>
 </html>

@@ -3,239 +3,186 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Admin - Accounts</title>
+  <title>Admin Dashboard</title>
   <style>
-    body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial;margin:24px;background:#071226;color:#e6eef8}
-    .card{background:#0f1f33;padding:16px;border-radius:8px;margin-bottom:12px}
-    textarea{width:100%;height:160px;background:#071226;color:#e6eef8;border:1px solid #234}
-    table{width:100%;border-collapse:collapse}
-    td,th{border:1px solid #203; padding:6px}
-    button{padding:8px 12px;background:#2b8; border:none;color:#022; border-radius:6px;cursor:pointer}
+    *{box-sizing:border-box}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;background:linear-gradient(135deg,#0a0f1a 0%,#1a1f35 100%);color:#e6eef8;min-height:100vh;padding:24px}
+    h1{text-align:center;font-size:28px;margin-bottom:24px;color:#fff;text-shadow:0 2px 8px rgba(0,200,255,0.3)}
+    .login-container{max-width:400px;margin:80px auto;background:rgba(20,30,50,0.9);padding:32px;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.4);border:1px solid rgba(100,150,255,0.1)}
+    .login-container h2{margin:0 0 24px;text-align:center;color:#7af}
+    .login-container input{width:100%;padding:12px 16px;margin-bottom:16px;border:1px solid rgba(100,150,255,0.2);border-radius:8px;background:rgba(0,10,30,0.6);color:#fff;font-size:14px}
+    .login-container input:focus{outline:none;border-color:#4af;box-shadow:0 0 12px rgba(68,170,255,0.3)}
+    .login-container button{width:100%;padding:14px;background:linear-gradient(135deg,#2a8 0%,#3c9 100%);border:none;border-radius:8px;color:#fff;font-size:16px;font-weight:600;cursor:pointer;transition:transform 0.2s,box-shadow 0.2s}
+    .login-container button:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(50,200,150,0.4)}
+    .login-msg{text-align:center;color:#f77;margin-top:12px}
+    
+    .dashboard{max-width:1200px;margin:0 auto;display:none}
+    .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:12px}
+    .header h1{margin:0;flex:1}
+    .header-btns{display:flex;gap:8px}
+    .btn{padding:10px 20px;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.2s}
+    .btn-refresh{background:linear-gradient(135deg,#28a 0%,#3bc 100%);color:#fff}
+    .btn-refresh:hover{transform:translateY(-2px);box-shadow:0 4px 16px rgba(40,170,200,0.4)}
+    .btn-logout{background:linear-gradient(135deg,#c44 0%,#f66 100%);color:#fff}
+    .btn-logout:hover{transform:translateY(-2px);box-shadow:0 4px 16px rgba(255,100,100,0.4)}
+    
+    .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:24px}
+    .stat-card{background:linear-gradient(145deg,rgba(30,50,80,0.8) 0%,rgba(20,35,60,0.9) 100%);padding:20px;border-radius:12px;text-align:center;border:1px solid rgba(100,150,255,0.1);transition:transform 0.2s,box-shadow 0.2s}
+    .stat-card:hover{transform:translateY(-4px);box-shadow:0 8px 24px rgba(0,100,200,0.2)}
+    .stat-label{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#8af;margin-bottom:8px}
+    .stat-value{font-size:32px;font-weight:700;color:#fff}
+    .stat-card.online .stat-value{color:#4f8}
+    .stat-card.battles .stat-value{color:#fa0}
+    .stat-card.wins .stat-value{color:#4f8}
+    .stat-card.losses .stat-value{color:#f66}
+    
+    .panel{background:rgba(20,30,50,0.8);border-radius:12px;padding:20px;margin-bottom:16px;border:1px solid rgba(100,150,255,0.1)}
+    .panel h3{margin:0 0 16px;font-size:16px;color:#7af;display:flex;align-items:center;gap:8px}
+    .panel h3::before{content:'';width:4px;height:18px;background:linear-gradient(180deg,#4af,#28a);border-radius:2px}
+    .player-list{display:flex;flex-direction:column;gap:8px}
+    .player-item{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:rgba(0,20,40,0.5);border-radius:8px;border-left:3px solid #4f8}
+    .player-item.combat{border-left-color:#fa0}
+    .player-name{font-weight:600;color:#fff}
+    .player-info{font-size:12px;color:#8aa}
+    .empty-state{color:#667;font-style:italic;padding:16px;text-align:center}
+    
+    .pulse{animation:pulse 2s infinite}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.6}}
+    .live-dot{width:8px;height:8px;background:#4f8;border-radius:50%;display:inline-block;margin-right:8px;animation:pulse 1.5s infinite}
   </style>
 </head>
 <body>
-  <h1>Admin Console</h1>
-
-  <div class="card" id="loginCard">
-    <h3>Login</h3>
-    <p>Enter admin credentials used for Basic Auth.</p>
-    <label>Username: <input id="admUser" /></label>
-    <label style="margin-left:12px">Password: <input id="admPass" type="password" /></label>
-    <div style="margin-top:8px"><button id="btnLogin">Set Credentials</button></div>
-    <p id="loginMsg"></p>
+  <div class="login-container" id="loginCard">
+    <h2>🔐 Admin Login</h2>
+    <input id="admUser" placeholder="Username" />
+    <input id="admPass" type="password" placeholder="Password" />
+    <button id="btnLogin">Login</button>
+    <p class="login-msg" id="loginMsg"></p>
   </div>
 
-  <div class="card" id="controls" style="display:none;">
-    <button id="btnLoad">Load Accounts</button>
-    <button id="btnReload">Reload</button>
-    <button id="btnBulk">Apply Bulk Update</button>
-  </div>
-
-  <div class="card" id="accountsCard" style="display:none;">
-    <h3>Accounts</h3>
-    <div id="accountsList">No data</div>
-  </div>
-
-  <!-- Edit Modal -->
-  <div id="editModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;z-index:999;">
-    <div style="background:#071226;padding:16px;border-radius:8px;max-width:900px;margin:auto;">
-      <h3>Edit Account</h3>
-      <div style="display:flex;gap:12px;flex-wrap:wrap">
-        <div style="flex:1;min-width:260px">
-          <label>Username<br><input id="modal_username" disabled style="width:100%"/></label>
-          <label>Email<br><input id="modal_email" style="width:100%"/></label>
-          <label>Current Chapter<br><input id="modal_currentChapter" type="number" min="1" style="width:100%"/></label>
-        </div>
-        <div style="flex:1;min-width:260px">
-          <label>Gold<br><input id="modal_gold" type="number" style="width:100%"/></label>
-          <label>Chapter Currency (JSON)<br><textarea id="modal_currency" style="width:100%;height:120px"></textarea></label>
-        </div>
-      </div>
-      <div style="margin-top:8px">
-        <button id="modalSave">Save</button>
-        <button id="modalClose" style="background:#f66;color:#fff;margin-left:8px">Close</button>
-        <span id="modalMsg" style="margin-left:12px;color:#9f9"></span>
+  <div class="dashboard" id="statsArea">
+    <div class="header">
+      <h1><span class="live-dot"></span>Live Dashboard</h1>
+      <div class="header-btns">
+        <button class="btn btn-refresh" id="btnRefresh">↻ Refresh</button>
+        <button class="btn btn-logout" id="btnLogout">Logout</button>
       </div>
     </div>
-  </div>
 
-  <div class="card">
-    <h3>Edit Single Account</h3>
-    <p>Enter username to fetch and JSON to apply as partial update.</p>
-    <input id="editUser" placeholder="username" />
-    <div style="margin-top:8px"><textarea id="editJson">{
-  "currentChapter": 2
-}</textarea></div>
-    <div style="margin-top:8px"><button id="btnUpdate">Update Account</button><span id="updateMsg" style="margin-left:12px;color:#9f9"></span></div>
-  </div>
+    <div class="stats-grid">
+      <div class="stat-card online"><div class="stat-label">Online Now</div><div class="stat-value" id="stat_online">—</div></div>
+      <div class="stat-card"><div class="stat-label">Total Accounts</div><div class="stat-value" id="stat_accounts">—</div></div>
+      <div class="stat-card battles"><div class="stat-label">Active Combats</div><div class="stat-value" id="stat_ongoing">—</div></div>
+      <div class="stat-card wins"><div class="stat-label">Total Wins</div><div class="stat-value" id="stat_wins">—</div></div>
+      <div class="stat-card losses"><div class="stat-label">Total Losses</div><div class="stat-value" id="stat_losses">—</div></div>
+    </div>
 
-  <div class="card">
-    <h3>Bulk Update</h3>
-    <p>Provide JSON array of operations: [{"filter":{...}, "update":{"$set":{...}}}, ...]</p>
-    <textarea id="bulkJson">[ { "filter": { }, "update": { "$set": { } } } ]</textarea>
-    <div style="margin-top:8px"><button id="btnApplyBulk">Send Bulk</button><span id="bulkMsg" style="margin-left:12px;color:#9f9"></span></div>
+    <div class="panel">
+      <h3>Online Players</h3>
+      <div class="player-list" id="onlineList"><div class="empty-state">No players online</div></div>
+    </div>
+
+    <div class="panel">
+      <h3>Active Combats</h3>
+      <div class="player-list" id="ongoingList"><div class="empty-state">No active combats</div></div>
+    </div>
   </div>
 
   <script>
     let authHeader = null;
-    const setMsg = (id, txt) => document.getElementById(id).textContent = txt;
+    const now = () => new Date().getTime();
 
     document.getElementById('btnLogin').addEventListener('click', () => {
       const u = document.getElementById('admUser').value;
       const p = document.getElementById('admPass').value;
-      if (!u || !p) { setMsg('loginMsg','Enter username & password'); return; }
+      if (!u || !p) { document.getElementById('loginMsg').textContent = 'Enter username & password'; return; }
       authHeader = 'Basic ' + btoa(u + ':' + p);
       document.getElementById('loginCard').style.display = 'none';
-      document.getElementById('controls').style.display = '';
-      document.getElementById('accountsCard').style.display = '';
-      setMsg('loginMsg','');
+      document.getElementById('statsArea').style.display = 'block';
+      document.getElementById('loginMsg').textContent = '';
+      refreshStats();
     });
 
-    async function apiFetch(path, opts = {}){
+    document.getElementById('btnLogout').addEventListener('click', () => {
+      authHeader = null;
+      document.getElementById('loginCard').style.display = '';
+      document.getElementById('statsArea').style.display = 'none';
+      document.getElementById('admUser').value = '';
+      document.getElementById('admPass').value = '';
+    });
+
+    document.getElementById('btnRefresh').addEventListener('click', refreshStats);
+
+    async function apiFetch(path, opts = {}) {
       opts.headers = opts.headers || {};
       if (authHeader) opts.headers['Authorization'] = authHeader;
       const res = await fetch(path, opts);
-      if (res.status === 401) throw new Error('Unauthorized');
+      if (res.status === 401) {
+        alert('Unauthorized — check credentials');
+        throw new Error('Unauthorized');
+      }
       return res;
     }
 
-    document.getElementById('btnLoad').addEventListener('click', async () => {
+    function timeAgo(date) {
+      const seconds = Math.floor((now() - new Date(date).getTime()) / 1000);
+      if (seconds < 60) return 'just now';
+      const minutes = Math.floor(seconds / 60);
+      if (minutes < 60) return minutes + 'm ago';
+      const hours = Math.floor(minutes / 60);
+      return hours + 'h ago';
+    }
+
+    async function refreshStats() {
       try {
         const res = await apiFetch('/api/admin/accounts');
-        const data = await res.json();
-        renderAccountsTable(data);
+        const accounts = await res.json();
+
+        const totalAccounts = accounts.length;
+        let totalWins = 0, totalLosses = 0;
+        const online = [];
+        const ongoing = [];
+
+        const fiveMinAgo = now() - 5*60*1000;
+        for (const acc of accounts) {
+          const stats = acc.stats || {};
+          totalWins += stats.wins || 0;
+          totalLosses += stats.losses || 0;
+
+          const last = acc.lastLogin ? new Date(acc.lastLogin).getTime() : 0;
+          if (last >= fiveMinAgo) online.push({ username: acc.username, lastLogin: acc.lastLogin });
+
+          const chapters = acc.chapters || {};
+          for (const chKey of Object.keys(chapters)) {
+            try {
+              const sp = chapters[chKey].savedProgress;
+              if (sp) {
+                ongoing.push({ username: acc.username, chapter: chKey, level: sp.level || '?', savedAt: sp.savedAt });
+                break;
+              }
+            } catch (e) {}
+          }
+        }
+
+        document.getElementById('stat_online').textContent = online.length;
+        document.getElementById('stat_accounts').textContent = totalAccounts;
+        document.getElementById('stat_ongoing').textContent = ongoing.length;
+        document.getElementById('stat_wins').textContent = totalWins;
+        document.getElementById('stat_losses').textContent = totalLosses;
+
+        document.getElementById('onlineList').innerHTML = online.length
+          ? online.map(o => `<div class="player-item"><span class="player-name">${o.username}</span><span class="player-info">${timeAgo(o.lastLogin)}</span></div>`).join('')
+          : '<div class="empty-state">No players online</div>';
+
+        document.getElementById('ongoingList').innerHTML = ongoing.length
+          ? ongoing.map(o => `<div class="player-item combat"><span class="player-name">${o.username}</span><span class="player-info">Ch ${o.chapter} • Lv ${o.level}</span></div>`).join('')
+          : '<div class="empty-state">No active combats</div>';
+
       } catch (e) {
-        document.getElementById('accountsList').innerHTML = '<div style="color:#f99">Load failed: '+e.message+'</div>';
+        console.error(e);
+        alert('Failed to load stats');
       }
-    });
-
-    document.getElementById('btnReload').addEventListener('click', () => location.reload());
-
-    document.getElementById('btnUpdate').addEventListener('click', async () => {
-      const username = document.getElementById('editUser').value;
-      let updates = {};
-      try { updates = JSON.parse(document.getElementById('editJson').value); } catch (e) { setMsg('updateMsg','Invalid JSON'); return; }
-      try {
-        const res = await apiFetch('/api/admin/update-account', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ username, updates }) });
-        const data = await res.json();
-        setMsg('updateMsg','OK: ' + JSON.stringify(data));
-      } catch (e) {
-        setMsg('updateMsg','Error: '+e.message);
-      }
-    });
-
-    document.getElementById('btnApplyBulk').addEventListener('click', async () => {
-      let ops = [];
-      try { ops = JSON.parse(document.getElementById('bulkJson').value); } catch (e) { setMsg('bulkMsg','Invalid JSON'); return; }
-      try {
-        const res = await apiFetch('/api/admin/bulk-update', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ operations: ops }) });
-        const data = await res.json();
-        setMsg('bulkMsg','OK: ' + JSON.stringify(data));
-      } catch (e) {
-        setMsg('bulkMsg','Error: '+e.message);
-      }
-    });
-
-    // Render accounts as table with edit buttons
-    function renderAccountsTable(accounts) {
-      if (!Array.isArray(accounts)) {
-        document.getElementById('accountsList').innerHTML = '<div>No accounts</div>';
-        return;
-      }
-      const tbl = document.createElement('table');
-      const thead = document.createElement('thead');
-      thead.innerHTML = '<tr><th>Username</th><th>Email</th><th>Current Ch</th><th>Preview Inventory</th><th>Actions</th></tr>';
-      tbl.appendChild(thead);
-      const tbody = document.createElement('tbody');
-
-      accounts.forEach(acc => {
-        const tr = document.createElement('tr');
-        const username = acc.username || '';
-        const email = acc.email || '';
-        const currentChapter = acc.currentChapter || '';
-        // preview first chapter inventory
-        let invPreview = '';
-        try { invPreview = JSON.stringify(acc.chapters || {}).slice(0,120); } catch(e){ invPreview = '' }
-
-        tr.innerHTML = `<td>${username}</td><td>${email}</td><td>${currentChapter}</td><td><pre style="white-space:pre-wrap;max-height:80px;overflow:auto">${invPreview}</pre></td><td></td>`;
-        const actionTd = tr.querySelector('td:last-child');
-        const btn = document.createElement('button');
-        btn.textContent = 'Edit';
-        btn.addEventListener('click', () => openEditModal(acc));
-        actionTd.appendChild(btn);
-        tbody.appendChild(tr);
-      });
-
-      tbl.appendChild(tbody);
-      const container = document.getElementById('accountsList');
-      container.innerHTML = '';
-      container.appendChild(tbl);
     }
-
-    function openEditModal(account) {
-      document.getElementById('modal_username').value = account.username || '';
-      document.getElementById('modal_email').value = account.email || '';
-      document.getElementById('modal_currentChapter').value = account.currentChapter || 1;
-      // gold and per-chapter currencies
-      try {
-        const ch = account.chapters || {};
-        const gold = (ch[1] && ch[1].inventory && ch[1].inventory.gold) || 0;
-        document.getElementById('modal_gold').value = gold;
-        // build currency object
-        const currencies = {};
-        Object.keys(ch).forEach(k => {
-          const inv = ch[k].inventory || {};
-          // collect named currencies (non-gold)
-          Object.keys(inv).forEach(field => {
-            if (field !== 'gold' && field !== 'unlockedParameters' && field !== 'unlockedAbilities') {
-              currencies[`${k}_${field}`] = inv[field];
-            }
-          });
-        });
-        document.getElementById('modal_currency').value = JSON.stringify(currencies, null, 2);
-      } catch(e) { document.getElementById('modal_currency').value = '{}'; }
-      document.getElementById('editModal').style.display = 'flex';
-    }
-
-    document.getElementById('modalClose').addEventListener('click', () => {
-      document.getElementById('editModal').style.display = 'none';
-      setMsg('modalMsg','');
-    });
-
-    document.getElementById('modalSave').addEventListener('click', async () => {
-      const username = document.getElementById('modal_username').value;
-      const email = document.getElementById('modal_email').value;
-      const currentChapter = Number(document.getElementById('modal_currentChapter').value) || 1;
-      const gold = Number(document.getElementById('modal_gold').value) || 0;
-      let currencies = {};
-      try { currencies = JSON.parse(document.getElementById('modal_currency').value); } catch (e) { setMsg('modalMsg','Invalid currency JSON'); return; }
-
-      // Build updates object: set email, currentChapter, and per-chapter inventory currencies
-      const updates = {};
-      updates.email = email;
-      updates.currentChapter = currentChapter;
-
-      // patch chapters.inventory fields using dot notation
-      const chapterSets = {};
-      chapterSets['chapters.1.inventory.gold'] = gold;
-      Object.keys(currencies).forEach(key => {
-        const [chId, field] = key.split('_');
-        if (!chId || !field) return;
-        chapterSets[`chapters.${chId}.inventory.${field}`] = currencies[key];
-      });
-
-      // Build final update using $set
-      const finalUpdate = { $set: Object.assign({}, updates, chapterSets) };
-
-      try {
-        const res = await apiFetch('/api/admin/update-account', { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ username, updates: finalUpdate.$set }) });
-        const data = await res.json();
-        setMsg('modalMsg','Saved');
-        document.getElementById('editModal').style.display = 'none';
-      } catch (e) {
-        setMsg('modalMsg','Error: '+e.message);
-      }
-    });
   </script>
 </body>
 </html>

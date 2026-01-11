@@ -1,5 +1,16 @@
 {
     "note_to_self": "only disallows requests, but websockets will keep going until they stop or combat ends",
     "note_to_self_2": "DO NOT TURN OFF SERVER WHILE COMBATS ARE ONGOING",
-    "maintenance_mode": false
+    "maintenance_mode": false,
+    "maintenance_status": "updating",
+    "maintenance_message": "oh mb i forgot i was updating, i was playing chess mb",
+    "maintenance_statuses": {
+        "waiting": "Waiting for all combats to finish...",
+        "updating": "Updating the server...",
+        "testing": "Testing new features...",
+        "deploying": "Deploying updates...",
+        "database": "Database maintenance in progress...",
+        "emergency": "Emergency maintenance - please stand by",
+        "soon": "Maintenance ending soon..."
+    }
 }

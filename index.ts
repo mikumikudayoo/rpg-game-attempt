@@ -86,6 +86,38 @@ async function connectToMongo() {
 // Middleware
 app.use(express.json());
 
+// --- Maintenance mode check ---
+function isMaintenanceMode(): boolean {
+    try {
+        const fs = require('fs');
+        const killswitchPath = path.join(process.cwd(), 'static', 'killswitch.json');
+        const data = fs.readFileSync(killswitchPath, 'utf-8');
+        const killswitch = JSON.parse(data);
+        return killswitch.maintenance_mode === true;
+    } catch (e) {
+        console.warn('Could not read killswitch.json:', e);
+    }
+    return false;
+}
+
+// Middleware to block new game actions during maintenance (but allow ongoing combats)
+function maintenanceGuard(req: Request, res: Response, next: NextFunction) {
+    if (!isMaintenanceMode()) {
+        return next();
+    }
+    
+    // Check if this is an API request or page request
+    if (req.path.startsWith('/api/')) {
+        return res.status(503).json({ 
+            error: 'Maintenance mode is active. Please try again later.',
+            maintenance: true 
+        });
+    }
+    
+    // For page requests, serve the maintenance page
+    return res.sendFile(path.join(process.cwd(), 'public', 'maintenance.html'));
+}
+
 // --- Admin HTTP Basic Auth middleware ---
 function checkAdminAuth(req: Request, res: Response, next: NextFunction) {
     const auth = req.headers.authorization;
@@ -122,6 +154,29 @@ function checkAdminAuth(req: Request, res: Response, next: NextFunction) {
 // Simple health check
 app.get('/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// API to check maintenance status
+app.get('/api/maintenance', (_req: Request, res: Response) => {
+    try {
+        const fs = require('fs');
+        const killswitchPath = path.join(process.cwd(), 'static', 'killswitch.json');
+        const data = fs.readFileSync(killswitchPath, 'utf-8');
+        const killswitch = JSON.parse(data);
+        const statusKey = killswitch.maintenance_status || 'updating';
+        const statuses = killswitch.maintenance_statuses || {};
+        const statusMessage = statuses[statusKey] || statusKey;
+        const devMessage = killswitch.maintenance_message || null;
+        return res.json({ 
+            maintenance: killswitch.maintenance_mode === true,
+            status: statusKey,
+            message: statusMessage,
+            devMessage: devMessage
+        });
+    } catch (e) {
+        console.warn('Could not read killswitch for maintenance API:', e);
+    }
+    res.json({ maintenance: false, status: null, message: null, devMessage: null });
 });
 
 // Serve admin UI (protected by Basic Auth)
@@ -479,10 +534,9 @@ app.post('/api/accounts/:username/levels/:chapter/:level/complete', async (req: 
         incObj['stats.totalBattles'] = 1;
         incObj['stats.wins'] = 1;
 
-        // Reward for clearing a level: base reward scales with chapter number
-        const baseReward = 100 * chapterNum;
+        // Reward for clearing a level: use leveling.json config
         const previouslyCleared = (chapterData.levelsCompleted || 0) >= levelNum;
-        const reward = previouslyCleared ? Math.floor(baseReward / 2) : baseReward;
+        const reward = getLevelReward(chapterNum, levelNum, previouslyCleared);
 
         // Add reward to chapter inventory
         incObj[`chapters.${chapterKey}.inventory.currency`] = reward;
@@ -511,6 +565,77 @@ app.post('/api/accounts/:username/levels/:chapter/:level/complete', async (req: 
 
 // Cache for chapter level counts (read from static/story/enemy/ch*.json)
 const chapterLevelCountCache: Record<number, number> = {};
+
+// Leveling config cache
+let levelingConfig: any = null;
+
+// Helper function to get the leveling config (rewards and costs)
+function getLevelingConfig() {
+    if (levelingConfig) return levelingConfig;
+    try {
+        const fs = require('fs');
+        const filePath = path.join(__dirname, 'static', 'story', 'leveling.json');
+        if (fs.existsSync(filePath)) {
+            levelingConfig = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+            return levelingConfig;
+        }
+    } catch (e) {
+        console.warn('Could not read leveling config:', e);
+    }
+    // Fallback defaults
+    return {
+        levelUpCost: { base: 100, increment: 50 },
+        levelRewards: { default: [200, 100, 50] },
+        bossLevelRewards: { overrides: {} }
+    };
+}
+
+// Helper function to calculate level-up cost for a given current level
+function getLevelUpCost(currentLevel: number): number {
+    const config = getLevelingConfig();
+    const base = config.levelUpCost?.base || 100;
+    const increment = config.levelUpCost?.increment || 50;
+    // cost = base + increment * (currentLevel - 1) => 100, 150, 200, 250...
+    return base + increment * (currentLevel - 1);
+}
+
+// Helper function to get level completion reward
+function getLevelReward(chapter: number, level: number, previouslyCleared: boolean): number {
+    const config = getLevelingConfig();
+    const levelKey = `${chapter}-${level}`;
+    
+    // Check for override first (can be number or array)
+    const overrides = config.levelRewards?.overrides || config.bossLevelRewards?.overrides || {};
+    const override = overrides[levelKey];
+    
+    let rewardTiers: number[];
+    if (override !== undefined && override !== null) {
+        // Override can be a number (flat reward for all clears) or array (like default)
+        if (Array.isArray(override)) {
+            rewardTiers = override;
+        } else if (typeof override === 'number') {
+            rewardTiers = [override]; // Single value = same for all clears
+        } else {
+            rewardTiers = config.levelRewards?.default || [200, 100, 50];
+        }
+    } else {
+        // Use default reward tiers
+        rewardTiers = config.levelRewards?.default || [200, 100, 50];
+    }
+    
+    // Determine reward based on clear count (first clear = index 0, etc.)
+    // For simplicity, previouslyCleared means at least 1 clear, so use index 1+
+    let reward: number;
+    if (!previouslyCleared) {
+        // First clear
+        reward = rewardTiers[0] || 50;
+    } else {
+        // Subsequent clears - use last tier value
+        reward = rewardTiers[rewardTiers.length - 1] || 50;
+    }
+    
+    return reward;
+}
 
 // Helper function to get the number of levels per chapter (reads from story/enemy json files)
 function getChapterLevelCount(chapter: number): number {
@@ -694,31 +819,39 @@ app.get('/api/chapters/:chapter', (req: Request, res: Response) => {
 // ==================== END ACCOUNT API ROUTES ====================
 
 // Page routes
-app.get('/', (_req: Request, res: Response) => {
+
+// Maintenance page (always accessible)
+app.get('/maintenance', (_req: Request, res: Response) => {
+    res.sendFile(path.join(__dirname, 'public', 'maintenance.html'));
+});
+
+// All pages blocked during maintenance except /maintenance, /admin, and /combat.js (for ongoing battles)
+app.get('/', maintenanceGuard, (_req: Request, res: Response) => {
     res.sendFile(path.join(__dirname, 'public', 'home.html'));
 });
 
-app.get('/dashboard', (_req: Request, res: Response) => {
+app.get('/dashboard', maintenanceGuard, (_req: Request, res: Response) => {
     res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
-app.get('/chapters', (_req: Request, res: Response) => {
+app.get('/chapters', maintenanceGuard, (_req: Request, res: Response) => {
     res.sendFile(path.join(__dirname, 'public', 'chapters.html'));
 });
 
-app.get('/levels', (_req: Request, res: Response) => {
+app.get('/levels', maintenanceGuard, (_req: Request, res: Response) => {
     res.sendFile(path.join(__dirname, 'public', 'levels.html'));
 });
 
-app.get('/combat', (_req: Request, res: Response) => {
+app.get('/combat', maintenanceGuard, (_req: Request, res: Response) => {
     res.sendFile(path.join(__dirname, 'public', 'combat.html'));
 });
 
+// combat.js always accessible (needed for ongoing battles)
 app.get('/combat.js', (_req: Request, res: Response) => {
     res.sendFile(path.join(__dirname, 'public', 'combat.js'));
 });
 
-app.get('/gacha', (_req: Request, res: Response) => {
+app.get('/gacha', maintenanceGuard, (_req: Request, res: Response) => {
     res.sendFile(path.join(__dirname, 'public', 'gacha.html'));
 });
 
@@ -762,8 +895,8 @@ app.get('/api/getParameters', async (_req: Request, res: Response) => {
     }
 });
 
-// API to get character data for a chapter and level
-app.get('/api/getUnits', async (req: Request, res: Response) => {
+// API to get character data for a chapter and level (blocked during maintenance)
+app.get('/api/getUnits', maintenanceGuard, async (req: Request, res: Response) => {
     const chapterNum = Number(req.query.ch) || 1;
     const levelNum = Number(req.query.lvl) || 1;
     const username = req.query.username as string | undefined;
@@ -862,9 +995,18 @@ app.get('/api/getUnits', async (req: Request, res: Response) => {
                 }
             }
 
+            // Determine character level
+            let charLevel = 1;
+            if (accountCharacterLevels) {
+                const keys = Object.keys(charsData as Record<string, any>);
+                const charIndex = keys.indexOf(name);
+                charLevel = (charIndex >= 0 && accountCharacterLevels[charIndex]) ? accountCharacterLevels[charIndex] : 1;
+            }
+
             PCs[name] = {
                 maxHp: data.maxHp,
                 role: data.role,
+                level: charLevel,
                 ability: {
                     damage,
                     heal,
@@ -881,6 +1023,16 @@ app.get('/api/getUnits', async (req: Request, res: Response) => {
         if (!levelData) {
             return res.status(404).json({ error: `Level ${levelNum} not found in chapter ${chapterNum}.` });
         }
+        
+        // Get enemy scaling config
+        const levelingCfg = getLevelingConfig();
+        const enemyScaling = levelingCfg.enemyScaling || { enabled: false };
+        const scalingEnabled = enemyScaling.enabled !== false;
+        const startLevel = enemyScaling.startLevel || 2;
+        const perLevel = enemyScaling.perLevel || { hp: 5, damage: 1, rolls: 0.5 };
+        
+        // Calculate scaling multiplier based on level
+        const scalingLevels = Math.max(0, levelNum - startLevel + 1);
         
         // Build enemy data for this specific level
         // Use unique keys for each enemy instance (e.g., "Dagger_0", "Dagger_1")
@@ -902,20 +1054,37 @@ app.get('/api/getUnits', async (req: Request, res: Response) => {
             const abilityNames = enemyDef.abilities || (enemyDef.ability ? [enemyDef.ability] : []);
             const abilities = abilityNames.map((abilityName: string) => {
                 const abilityData = enemyAbilities[abilityName] || {};
+                let damage = abilityData.damage || 0;
+                let minroll = abilityData.minroll || 0;
+                let rolls = abilityData.rolls || 0;
+                
+                // Apply scaling if enabled
+                if (scalingEnabled && scalingLevels > 0) {
+                    damage += Math.floor(scalingLevels * (perLevel.damage || 0));
+                    rolls += Math.floor(scalingLevels * (perLevel.rolls || 0));
+                }
+                
                 return {
                     name: abilityName,
-                    damage: abilityData.damage || 0,
-                    minroll: abilityData.minroll || 0,
-                    rolls: abilityData.rolls || 0,
+                    damage,
+                    minroll,
+                    rolls,
                     type: abilityData.type || "Rolling"
                 };
             });
             
             const passiveNames = Object.keys(enemyDef.passives || {});
             
+            // Apply HP scaling
+            let maxHp = enemyDef.maxHp || 10;
+            if (scalingEnabled && scalingLevels > 0) {
+                maxHp += Math.floor(scalingLevels * (perLevel.hp || 0));
+            }
+            
             ENs[uniqueKey] = {
-                maxHp: enemyDef.maxHp,
+                maxHp,
                 name: enemyDef.name,
+                level: scalingEnabled ? Math.max(1, levelNum) : 1,
                 // Keep 'ability' for backward compatibility (first ability)
                 ability: abilities[0] || { damage: 0, minroll: 0, rolls: 0, type: "Rolling" },
                 // Add 'abilities' array for multi-ability support
@@ -935,7 +1104,8 @@ app.get('/api/getUnits', async (req: Request, res: Response) => {
     }
 });
 
-app.post('/api/getDialogue', (req: Request, res: Response) => {
+// Dialogue API (blocked during maintenance)
+app.post('/api/getDialogue', maintenanceGuard, (req: Request, res: Response) => {
     // Get chapter, level, and type (pre/post) from request
     const chapterNum = Number(req.body.ch);
     const levelNum = Number(req.body.lvl) || 1;
@@ -994,22 +1164,6 @@ app.post('/api/getDialogue', (req: Request, res: Response) => {
     }
 });
 
-// 404 handler
-app.use((req: Request, res: Response) => {
-    res.status(404).json({ error: 'Not Found', path: req.path });
-});
-
-// Error handler
-app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    res.status(500).json({ error: message });
-});
-
-app.listen(PORT, async () => {
-    await connectToMongo();
-    console.log(`Server listening on http://localhost:${PORT}`);
-});
-
 // Level up a character for a user's chapter
 app.post('/api/accounts/:username/level-up', async (req: Request, res: Response) => {
     try {
@@ -1045,9 +1199,8 @@ app.post('/api/accounts/:username/level-up', async (req: Request, res: Response)
         if (idx < 0 || idx >= levels.length) return res.status(400).json({ error: 'Invalid charIndex' });
 
         const currentCharLevel = (levels[idx] || 1);
-        // cost formula: base 100 scaled by 1.25^(level-1)
-        const baseCost = 100;
-        const cost = Math.max(1, Math.round(baseCost * Math.pow(1.25, currentCharLevel - 1)));
+        // Use leveling.json config for cost formula
+        const cost = getLevelUpCost(currentCharLevel);
 
         // Ensure inventory exists
         if (!account.chapters[chapterKey].inventory) account.chapters[chapterKey].inventory = { currency: 0, pulls: 0, unlockedAbilities: [] } as any;
@@ -1072,4 +1225,20 @@ app.post('/api/accounts/:username/level-up', async (req: Request, res: Response)
         console.error('Level up error:', e);
         return res.status(500).json({ error: 'Failed to level up' });
     }
+});
+
+// 404 handler
+app.use((req: Request, res: Response) => {
+    res.status(404).json({ error: 'Not Found', path: req.path });
+});
+
+// Error handler
+app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    res.status(500).json({ error: message });
+});
+
+app.listen(PORT, async () => {
+    await connectToMongo();
+    console.log(`Server listening on http://localhost:${PORT}`);
 });

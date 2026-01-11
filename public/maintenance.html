@@ -1,0 +1,121 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Maintenance Mode</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:linear-gradient(135deg,#0a0f1a 0%,#1a1f35 100%);color:#e6eef8;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+    .container{text-align:center;max-width:500px}
+    .icon{font-size:80px;margin-bottom:24px;animation:float 3s ease-in-out infinite}
+    @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+    h1{font-size:32px;margin-bottom:16px;color:#fff}
+    p{font-size:16px;color:#8af;line-height:1.6;margin-bottom:24px}
+    .status-box{background:rgba(20,30,50,0.8);border:1px solid rgba(100,150,255,0.2);border-radius:12px;padding:20px;margin-bottom:24px}
+    .status-row{display:flex;align-items:center;justify-content:center;gap:12px}
+    .pulse-dot{width:12px;height:12px;border-radius:50%;animation:pulse 1.5s infinite}
+    .pulse-dot.waiting{background:#fa0}
+    .pulse-dot.updating{background:#4af}
+    .pulse-dot.testing{background:#a4f}
+    .pulse-dot.deploying{background:#4f8}
+    .pulse-dot.database{background:#f4a}
+    .pulse-dot.emergency{background:#f44}
+    .pulse-dot.soon{background:#4f8}
+    @keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 8px currentColor}50%{opacity:0.5;box-shadow:0 0 16px currentColor}}
+    .status-text{font-size:14px;font-weight:600;transition:color 0.3s}
+    .status-text.waiting{color:#fa0}
+    .status-text.updating{color:#4af}
+    .status-text.testing{color:#a4f}
+    .status-text.deploying{color:#4f8}
+    .status-text.database{color:#f4a}
+    .status-text.emergency{color:#f44}
+    .status-text.soon{color:#4f8}
+    .info{font-size:13px;color:#667;margin-top:12px}
+    .dev-message{margin-top:16px;padding:14px 18px;background:rgba(100,150,255,0.1);border-left:3px solid #4af;border-radius:0 8px 8px 0;text-align:left;display:none}
+    .dev-message-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#4af;margin-bottom:6px}
+    .dev-message-text{font-size:14px;color:#cdf;line-height:1.5}
+    .btn{display:inline-block;padding:12px 28px;background:linear-gradient(135deg,#28a 0%,#3bc 100%);color:#fff;text-decoration:none;border-radius:8px;font-weight:600;transition:all 0.2s;border:none;cursor:pointer;font-size:14px}
+    .btn:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(40,170,200,0.4)}
+    .refresh-timer{font-size:12px;color:#556;margin-top:16px}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">🔧</div>
+    <h1>Under Maintenance</h1>
+    <p>We're performing scheduled maintenance to improve your experience. The game will be back shortly!</p>
+    
+    <div class="status-box">
+      <div class="status-row">
+        <div class="pulse-dot updating" id="statusDot"></div>
+        <span class="status-text updating" id="statusText">Updating the server...</span>
+      </div>
+      <p class="info">Ongoing battles will continue uninterrupted. New battles cannot be started during maintenance.</p>
+      <div class="dev-message" id="devMessage">
+        <div class="dev-message-label">📝 Message from the Dev</div>
+        <div class="dev-message-text" id="devMessageText"></div>
+      </div>
+    </div>
+    
+    <button class="btn" onclick="checkStatus()">Check Again</button>
+    <div class="refresh-timer" id="timer">Auto-refresh in 30s</div>
+  </div>
+
+  <script>
+    let countdown = 30;
+    
+    async function checkStatus() {
+      try {
+        const res = await fetch('/api/maintenance');
+        const data = await res.json();
+        
+        if (!data.maintenance) {
+          // Maintenance ended, redirect to home
+          window.location.href = '/';
+          return;
+        }
+        
+        // Update status display
+        const dot = document.getElementById('statusDot');
+        const text = document.getElementById('statusText');
+        const status = data.status || 'updating';
+        const message = data.message || 'Updating the server...';
+        
+        // Remove old classes and add new ones
+        dot.className = 'pulse-dot ' + status;
+        text.className = 'status-text ' + status;
+        text.textContent = message;
+        
+        // Show dev message if present
+        const devMsgBox = document.getElementById('devMessage');
+        const devMsgText = document.getElementById('devMessageText');
+        if (data.devMessage) {
+          devMsgText.textContent = data.devMessage;
+          devMsgBox.style.display = 'block';
+        } else {
+          devMsgBox.style.display = 'none';
+        }
+        
+        countdown = 30;
+      } catch (e) {
+        console.error('Failed to check status:', e);
+      }
+    }
+    
+    function updateTimer() {
+      countdown--;
+      document.getElementById('timer').textContent = 'Auto-refresh in ' + countdown + 's';
+      if (countdown <= 0) {
+        checkStatus();
+      }
+    }
+    
+    // Initial check
+    checkStatus();
+    
+    // Update timer every second
+    setInterval(updateTimer, 1000);
+  </script>
+</body>
+</html>

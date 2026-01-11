@@ -2400,7 +2400,7 @@ function createCard(u, id) {
         ${badge}
         ${infoBtn}
         <div class="flex justify-between text-xs font-bold ${isPC?'text-blue-400':'text-red-400'} uppercase mt-1">
-            <span>${u.role || 'Enemy'}</span>
+            <span>${u.role || 'Enemy'}${u.level ? ` <span class="${isPC ? 'text-amber-400' : 'text-red-300'}">Lv${u.level}</span>` : ''}</span>
         </div>
         <div class="flex items-center gap-3">
             <div class="unit-icon">${iconHtml}</div>
