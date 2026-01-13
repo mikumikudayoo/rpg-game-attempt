@@ -466,6 +466,262 @@ async function fetchUnitData(chapter = 1, level = 1) {
     }
 }
 
+// ==========================================
+// SERVER-SIDE COMBAT API
+// ==========================================
+
+// Start a server-side combat session
+async function startServerCombat() {
+    try {
+        const user = getLoggedInUser && typeof getLoggedInUser === 'function' ? getLoggedInUser() : null;
+        if (!user || !user.username) {
+            console.warn('No logged in user, falling back to client-side combat');
+            GameState.useServerCombat = false;
+            return null;
+        }
+        
+        const { chapter, level } = getUrlParams();
+        
+        const res = await fetch('/api/combat/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username: user.username,
+                chapter,
+                level
+            })
+        });
+        
+        if (!res.ok) {
+            console.error('Failed to start server combat:', await res.text());
+            GameState.useServerCombat = false;
+            return null;
+        }
+        
+        const data = await res.json();
+        GameState.combatSessionId = data.sessionId;
+        
+        console.log('Server combat session started:', data.sessionId);
+        return data;
+    } catch (e) {
+        console.error('Error starting server combat:', e);
+        GameState.useServerCombat = false;
+        return null;
+    }
+}
+
+// Send player actions to server and execute turn
+async function executeServerTurn(actions) {
+    if (!GameState.combatSessionId) {
+        console.error('No combat session active');
+        return null;
+    }
+    
+    try {
+        const res = await fetch(`/api/combat/${GameState.combatSessionId}/turn`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ actions })
+        });
+        
+        if (!res.ok) {
+            console.error('Failed to execute server turn:', await res.text());
+            return null;
+        }
+        
+        const data = await res.json();
+        return data;
+    } catch (e) {
+        console.error('Error executing server turn:', e);
+        return null;
+    }
+}
+
+// Update enemy plans based on pending player actions
+async function updateServerEnemyPlans() {
+    if (!GameState.combatSessionId) return;
+    
+    try {
+        // Convert pending actions to server format
+        const pendingActions = {};
+        for (const [pcId, action] of Object.entries(GameState.pendingActions)) {
+            if (action && typeof action === 'object') {
+                const targetBoxId = action.tgt;
+                const targetId = GameState.abilityTargets[targetBoxId] || targetBoxId;
+                const targetAbilityIndex = targetBoxId.includes('_AB_') ? parseInt(targetBoxId.split('_AB_')[1]) || 0 : 0;
+                const sourceAbilityIndex = action.srcBoxId?.includes('_AB_') ? parseInt(action.srcBoxId.split('_AB_')[1]) || 0 : 0;
+                
+                pendingActions[pcId] = {
+                    targetId,
+                    targetAbilityIndex,
+                    sourceAbilityIndex
+                };
+            }
+        }
+        
+        const res = await fetch(`/api/combat/${GameState.combatSessionId}/updateEnemyPlans`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pendingActions })
+        });
+        
+        if (res.ok) {
+            const data = await res.json();
+            // Convert server enemy actions to client format for visual display
+            convertServerEnemyActions(data.enemyActions);
+        }
+    } catch (e) {
+        console.error('Error updating server enemy plans:', e);
+    }
+}
+
+// Convert server enemy actions to client format
+function convertServerEnemyActions(serverActions) {
+    GameState.enemyActions = {};
+    for (const [boxId, action] of Object.entries(serverActions || {})) {
+        const pcBox = Object.keys(GameState.abilityTargets).find(k => GameState.abilityTargets[k] === action.targetId);
+        GameState.enemyActions[boxId] = {
+            srcBoxId: boxId,
+            tgt: pcBox || action.targetId
+        };
+    }
+}
+
+// Display combat events from server
+async function displayCombatEvents(events) {
+    for (const event of events) {
+        await displaySingleEvent(event);
+    }
+}
+
+// Display a single combat event with animations
+async function displaySingleEvent(event) {
+    const delay = 400;
+    
+    switch (event.type) {
+        case 'roll':
+            // Show dice rolls
+            if (event.sourceId) spawnFloatText(event.sourceId, `🎲 ${event.roll1}`, 'text-cyan-300');
+            if (event.targetId) spawnFloatText(event.targetId, `🎲 ${event.roll2}`, 'text-red-300');
+            log(event.message, event.messageType || 'duel');
+            await wait(800);
+            break;
+            
+        case 'duel':
+            // Show duel result
+            if (event.winner) {
+                document.getElementById(event.winner)?.classList.add('winner');
+                const loser = event.winner === event.sourceId ? event.targetId : event.sourceId;
+                if (loser) document.getElementById(loser)?.classList.add('loser');
+            }
+            log(event.message, event.messageType || 'duel');
+            await wait(delay);
+            break;
+            
+        case 'damage':
+            // Show damage
+            if (event.targetId && event.value) {
+                spawnFloatText(event.targetId, `-${event.value}`, 'text-red-400');
+                // Update unit HP from server state (will be done in sync)
+            }
+            log(event.message, event.messageType || 'dmg');
+            await wait(delay);
+            break;
+            
+        case 'heal':
+            // Show healing
+            if (event.targetId && event.value) {
+                spawnFloatText(event.targetId, `+${event.value}`, 'text-emerald-400');
+            }
+            log(event.message, event.messageType || 'heal');
+            await wait(delay);
+            break;
+            
+        case 'death':
+            // Show death
+            if (event.targetId) {
+                const el = document.getElementById(event.targetId);
+                if (el) {
+                    el.classList.add('opacity-50', 'grayscale');
+                    el.draggable = false;
+                }
+            }
+            log(event.message, event.messageType || 'sys');
+            await wait(delay);
+            break;
+            
+        case 'status':
+            // Show status effect applied
+            if (event.targetId) {
+                updateStatusBadges(event.targetId);
+            }
+            log(event.message, event.messageType || 'sys');
+            await wait(200);
+            break;
+            
+        case 'speed_roll':
+        case 'turn_start':
+        case 'turn_end':
+        case 'phase_change':
+        case 'message':
+            log(event.message, event.messageType || 'sys');
+            await wait(200);
+            break;
+            
+        case 'victory':
+            log(event.message, 'sys');
+            break;
+            
+        case 'defeat':
+            log(event.message, 'sys');
+            break;
+    }
+}
+
+// Sync client state with server state
+function syncWithServerState(serverState) {
+    // Update units
+    for (const [id, unit] of Object.entries(serverState.units)) {
+        if (GameState.units[id]) {
+            GameState.units[id].hp = unit.hp;
+            GameState.units[id].maxHp = unit.maxHp;
+            GameState.units[id].statusEffects = unit.statusEffects || {};
+            GameState.units[id].speed = unit.speed;
+            updateUI(id);
+            updateStatusBadges(id);
+        }
+    }
+    
+    // Update turn order
+    GameState.turnOrder = serverState.turnOrder;
+    
+    // Update turn counter
+    GameState.turn = serverState.turn;
+    document.getElementById('turn-counter').innerText = serverState.turn;
+    
+    // Update phase
+    GameState.phase = serverState.phase === 'PLANNING' ? 'PLANNING' : 
+                      serverState.phase === 'EXECUTING' ? 'EXECUTING' : 
+                      serverState.phase;
+    
+    // Convert server enemy actions
+    convertServerEnemyActions(serverState.enemyActions);
+}
+
+// End server combat session
+async function endServerCombat() {
+    if (!GameState.combatSessionId) return;
+    
+    try {
+        await fetch(`/api/combat/${GameState.combatSessionId}`, {
+            method: 'DELETE'
+        });
+        GameState.combatSessionId = null;
+    } catch (e) {
+        console.error('Error ending server combat:', e);
+    }
+}
+
 let GameState = {
     units: {},
     pendingActions: {}, 
@@ -493,7 +749,11 @@ let GameState = {
 
     // Parameters dragging state
     parameterDragStart: null,
-    parameterDragSourceId: null
+    parameterDragSourceId: null,
+    
+    // Server-side combat session
+    combatSessionId: null,
+    useServerCombat: true // Toggle for server-side combat
 };
 
 let Script = [{ speaker: "", text: "" }];
@@ -1044,6 +1304,13 @@ async function resolveCombat() {
     document.getElementById('turn-indicator').innerText = "COMBAT PHASE";
     document.getElementById('turn-indicator').className = "text-lg sm:text-2xl font-bold text-red-500 animate-pulse";
 
+    // Use server-side combat if enabled and session exists
+    if (GameState.useServerCombat && GameState.combatSessionId) {
+        await resolveServerCombat();
+        return;
+    }
+
+    // --- CLIENT-SIDE COMBAT (fallback) ---
     // --- TURN START STATUS EFFECTS (Poison) ---
     processStatusEffectsTurnStart();
     checkDeaths();
@@ -1115,6 +1382,102 @@ async function resolveCombat() {
     
     // Reset Visuals
     document.querySelectorAll('.winner, .loser').forEach(el => el.classList.remove('winner', 'loser'));
+}
+
+// Server-side combat resolution
+async function resolveServerCombat() {
+    const btn = document.getElementById('btn-turn');
+    
+    try {
+        // Convert pending actions to server format
+        const actions = {};
+        for (const [pcId, action] of Object.entries(GameState.pendingActions)) {
+            if (action && typeof action === 'object') {
+                const targetBoxId = action.tgt;
+                const targetId = GameState.abilityTargets[targetBoxId] || targetBoxId;
+                const targetAbilityIndex = targetBoxId.includes('_AB_') ? parseInt(targetBoxId.split('_AB_')[1]) || 0 : 0;
+                const sourceAbilityIndex = action.srcBoxId?.includes('_AB_') ? parseInt(action.srcBoxId.split('_AB_')[1]) || 0 : 0;
+                
+                actions[pcId] = {
+                    sourceAbilityIndex,
+                    targetId,
+                    targetAbilityIndex
+                };
+            }
+        }
+        
+        // Send to server and get results
+        const result = await executeServerTurn(actions);
+        
+        if (!result) {
+            log('Server combat failed, falling back to client-side.', 'sys');
+            GameState.useServerCombat = false;
+            // Re-run with client-side combat
+            GameState.phase = 'PLANNING';
+            await resolveCombat();
+            return;
+        }
+        
+        // Display all combat events with animations
+        await displayCombatEvents(result.events);
+        
+        // Sync client state with server
+        syncWithServerState(result.state);
+        
+        // Check for victory or defeat
+        if (result.state.result === 'victory') {
+            await showGameOver("Victory", "All enemies have been defeated!", "text-green-500");
+            await completeLevel();
+            await endServerCombat();
+            startDialogue(PostVictoryScript, returnToLevelSelect);
+            return;
+        } else if (result.state.result === 'defeat') {
+            await showGameOver("Defeat", "Your party has been wiped out...", "text-red-500");
+            await endServerCombat();
+            return;
+        }
+        
+        // Continue to planning phase
+        GameState.phase = 'PLANNING';
+        GameState.pendingActions = {};
+        
+        // Remove 'assigned' class from all units
+        document.querySelectorAll('.unit-card.assigned').forEach(el => el.classList.remove('assigned'));
+        document.querySelectorAll('.ability-box.assigned').forEach(el => el.classList.remove('assigned'));
+        
+        document.getElementById('turn-counter').innerText = result.state.turn;
+        document.getElementById('turn-indicator').innerText = "PLANNING PHASE";
+        document.getElementById('turn-indicator').className = "text-lg sm:text-2xl font-bold text-blue-400";
+        
+        // Animate speed reorder based on server turn order
+        const pCon = document.getElementById('player-container');
+        if (pCon && result.state.turnOrder.length > 0) {
+            // Update speed badges
+            result.state.turnOrder.forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                let sp = el.querySelector('.speed-badge');
+                if (sp && result.state.units[id]) {
+                    sp.innerText = `SP ${result.state.units[id].speed}`;
+                }
+            });
+            
+            await flipReorder(pCon, result.state.turnOrder);
+        }
+        
+        btn.disabled = false;
+        btn.innerText = "INITIATE COMBAT";
+        
+        // Reset Visuals
+        document.querySelectorAll('.winner, .loser').forEach(el => el.classList.remove('winner', 'loser'));
+        
+    } catch (e) {
+        console.error('Server combat error:', e);
+        log('Server combat error, falling back to client-side.', 'sys');
+        GameState.useServerCombat = false;
+        GameState.phase = 'PLANNING';
+        await resolveCombat();
+    }
 }
 
 async function resolveDuel(srcId, tgtId, visualTgtId = null, visualSrcId = null) {
@@ -1502,6 +1865,11 @@ function updateEnemyPlansFromPending() {
             }
         }
     });
+    
+    // Also update server if using server-side combat
+    if (GameState.useServerCombat && GameState.combatSessionId) {
+        updateServerEnemyPlans().catch(e => console.warn('Failed to update server enemy plans:', e));
+    }
 }
 
 function undoLastAssignment() {
@@ -2502,20 +2870,32 @@ async function init() {
     
     // Create PC units from server data
     Object.entries(UnitData.PCs).forEach(([name, data], i) => {
-        const id = `PC_${i}`;
+        const id = `PC${i}`;
         GameState.units[id] = { ...data, name, type: 'PC', hp: data.maxHp, id, parameters: [] };
         pCon.appendChild(createCard(GameState.units[id], id));
     });
     
     // Create enemy units from server data
     Object.entries(UnitData.ENs).forEach(([name, data], i) => {
-        const id = `EN_${i}`;
+        const id = `EN${i}`;
         GameState.units[id] = { ...data, type: 'EN', hp: data.maxHp, id, baseName: data.name, parameters: [] };
         eCon.appendChild(createCard(GameState.units[id], id));
     });
 
     // Initialize parameters container
     initParametersPanel();
+    
+    // Start server-side combat session if user is logged in
+    if (GameState.useServerCombat) {
+        const serverSession = await startServerCombat();
+        if (serverSession) {
+            // Sync initial state from server
+            syncWithServerState(serverSession.state);
+            log('Server combat session initialized.', 'sys');
+        } else {
+            log('Using client-side combat.', 'sys');
+        }
+    }
 
     // Start the game with the dialogue sequence (dialogue loader will call `startDialogue` when ready)
 }

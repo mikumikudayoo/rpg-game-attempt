@@ -3,6 +3,14 @@ import type { Request, Response, NextFunction } from 'express';
 import * as path from 'path';
 import { MongoClient, Db, ObjectId } from 'mongodb';
 import dotenv from 'dotenv';
+import { 
+    createSession, 
+    getSession, 
+    deleteSession, 
+    executeCombatTurn, 
+    CombatEngine,
+    CombatAction 
+} from './combat-engine';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -61,6 +69,99 @@ interface Account {
         sfxVolume: number;
         autoSpeed: number;
     };
+}
+
+// Helper function to get default chapter progress structure
+function getDefaultChapterProgress(chapterNum: number = 1, unlocked: boolean = true): ChapterProgress {
+    return {
+        unlocked,
+        completed: false,
+        currentLevel: 1,
+        levelsCompleted: 0,
+        totalLevels: 10,
+        savedProgress: null,
+        characterLevels: [1, 1, 1, 1, 1],
+        inventory: {
+            currency: 1000,
+            pulls: 10,
+            unlockedAbilities: []
+        }
+    };
+}
+
+// Helper function to ensure account has all required fields (schema migration)
+async function ensureAccountSchema(account: Account): Promise<{ updated: boolean; updates: Record<string, any> }> {
+    const updates: Record<string, any> = {};
+    
+    // Ensure chapters exists and has chapter 1
+    if (!account.chapters) {
+        updates['chapters'] = { "1": getDefaultChapterProgress(1, true) };
+    } else {
+        // Ensure chapter 1 exists
+        if (!account.chapters["1"]) {
+            updates['chapters.1'] = getDefaultChapterProgress(1, true);
+        } else {
+            // Ensure all chapter fields exist
+            const ch1 = account.chapters["1"];
+            if (ch1.unlocked === undefined) updates['chapters.1.unlocked'] = true;
+            if (ch1.completed === undefined) updates['chapters.1.completed'] = false;
+            if (ch1.currentLevel === undefined) updates['chapters.1.currentLevel'] = 1;
+            if (ch1.levelsCompleted === undefined) updates['chapters.1.levelsCompleted'] = 0;
+            if (ch1.totalLevels === undefined) updates['chapters.1.totalLevels'] = 10;
+            if (ch1.savedProgress === undefined) updates['chapters.1.savedProgress'] = null;
+            if (!ch1.characterLevels) updates['chapters.1.characterLevels'] = [1, 1, 1, 1, 1];
+            if (!ch1.inventory) {
+                updates['chapters.1.inventory'] = { currency: 1000, pulls: 10, unlockedAbilities: [] };
+            } else {
+                if (ch1.inventory.currency === undefined) updates['chapters.1.inventory.currency'] = 1000;
+                if (ch1.inventory.pulls === undefined) updates['chapters.1.inventory.pulls'] = 10;
+                if (!ch1.inventory.unlockedAbilities) updates['chapters.1.inventory.unlockedAbilities'] = [];
+            }
+        }
+    }
+    
+    // Ensure currentChapter exists
+    if (account.currentChapter === undefined) {
+        updates['currentChapter'] = 1;
+    }
+    
+    // Ensure stats exists with all fields
+    if (!account.stats) {
+        updates['stats'] = {
+            totalBattles: 0,
+            wins: 0,
+            losses: 0,
+            totalDamageDealt: 0,
+            totalHealingDone: 0
+        };
+    } else {
+        if (account.stats.totalBattles === undefined) updates['stats.totalBattles'] = 0;
+        if (account.stats.wins === undefined) updates['stats.wins'] = 0;
+        if (account.stats.losses === undefined) updates['stats.losses'] = 0;
+        if (account.stats.totalDamageDealt === undefined) updates['stats.totalDamageDealt'] = 0;
+        if (account.stats.totalHealingDone === undefined) updates['stats.totalHealingDone'] = 0;
+    }
+    
+    // Ensure settings exists with all fields
+    if (!account.settings) {
+        updates['settings'] = {
+            soundEnabled: true,
+            musicVolume: 0.8,
+            sfxVolume: 1.0,
+            autoSpeed: 1
+        };
+    } else {
+        if (account.settings.soundEnabled === undefined) updates['settings.soundEnabled'] = true;
+        if (account.settings.musicVolume === undefined) updates['settings.musicVolume'] = 0.8;
+        if (account.settings.sfxVolume === undefined) updates['settings.sfxVolume'] = 1.0;
+        if (account.settings.autoSpeed === undefined) updates['settings.autoSpeed'] = 1;
+    }
+    
+    // Ensure createdAt and lastLogin exist
+    if (!account.createdAt) updates['createdAt'] = new Date();
+    if (!account.lastLogin) updates['lastLogin'] = new Date();
+    
+    return { updated: Object.keys(updates).length > 0, updates };
 }
 
 const app = express();
@@ -339,14 +440,26 @@ app.post('/api/accounts/login', async (req: Request, res: Response) => {
             return res.status(401).json({ error: 'Invalid username or password.' });
         }
         
-        // Update last login
+        // Ensure account has all required fields (schema migration)
+        const { updated, updates } = await ensureAccountSchema(account);
+        const updateObj: Record<string, any> = { lastLogin: new Date(), ...updates };
+        
+        // Update last login and any missing fields
         await db.collection<Account>('accounts').updateOne(
             { _id: account._id },
-            { $set: { lastLogin: new Date() } }
+            { $set: updateObj }
         );
         
+        // Fetch the updated account if there were schema updates
+        let finalAccount = account;
+        if (updated) {
+            const refreshed = await db.collection<Account>('accounts').findOne({ _id: account._id });
+            if (refreshed) finalAccount = refreshed;
+            console.log(`Account ${username} schema updated with missing fields:`, Object.keys(updates));
+        }
+        
         // Return account data (excluding password hash)
-        const { passwordHash, ...safeAccount } = account;
+        const { passwordHash, ...safeAccount } = finalAccount;
         return res.json({ 
             message: 'Login successful.',
             account: safeAccount 
@@ -361,10 +474,23 @@ app.post('/api/accounts/login', async (req: Request, res: Response) => {
 app.get('/api/accounts/:username', async (req: Request, res: Response) => {
     try {
         const { username } = req.params;
-        const account = await db.collection<Account>('accounts').findOne({ username });
+        let account = await db.collection<Account>('accounts').findOne({ username });
         
         if (!account) {
             return res.status(404).json({ error: 'Account not found.' });
+        }
+        
+        // Ensure account has all required fields (schema migration)
+        const { updated, updates } = await ensureAccountSchema(account);
+        if (updated) {
+            await db.collection<Account>('accounts').updateOne(
+                { _id: account._id },
+                { $set: updates }
+            );
+            // Refresh the account data
+            const refreshed = await db.collection<Account>('accounts').findOne({ _id: account._id });
+            if (refreshed) account = refreshed;
+            console.log(`Account ${username} schema updated with missing fields:`, Object.keys(updates));
         }
         
         // Return account data (excluding password hash)
@@ -927,8 +1053,9 @@ app.get('/api/getUnits', maintenanceGuard, async (req: Request, res: Response) =
         const passives = require(passivesPath);
         
         // Build PC data with resolved abilities (optionally apply account levels)
-        // If a username is provided, fetch their characterLevels for this chapter
+        // If a username is provided, fetch their characterLevels and unlockedAbilities for this chapter
         let accountCharacterLevels: number[] | null = null;
+        let unlockedAbilities: string[] = [];
         if (username) {
             try {
                 const account = await db.collection<Account>('accounts').findOne({ username });
@@ -937,6 +1064,10 @@ app.get('/api/getUnits', maintenanceGuard, async (req: Request, res: Response) =
                     const ch = account.chapters?.[chapterKey];
                     if (ch && Array.isArray(ch.characterLevels)) {
                         accountCharacterLevels = ch.characterLevels.slice();
+                    }
+                    // Get unlocked abilities for this chapter's inventory
+                    if (ch?.inventory?.unlockedAbilities && Array.isArray(ch.inventory.unlockedAbilities)) {
+                        unlockedAbilities = ch.inventory.unlockedAbilities;
                     }
                 }
             } catch (e) {
@@ -1003,18 +1134,67 @@ app.get('/api/getUnits', maintenanceGuard, async (req: Request, res: Response) =
                 charLevel = (charIndex >= 0 && accountCharacterLevels[charIndex]) ? accountCharacterLevels[charIndex] : 1;
             }
 
+            // Build the primary ability
+            const primaryAbility = {
+                damage,
+                heal,
+                minroll,
+                rolls,
+                type: baseAbility.type || "Adaptive",
+                effect: abilityName
+            };
+
+            // Build abilities array - start with primary ability
+            const abilities = [primaryAbility];
+
+            // Add unlocked abilities from the chapter's inventory
+            for (const unlockedAbilityName of unlockedAbilities) {
+                const unlockedAbilityData = charAbilities[unlockedAbilityName];
+                if (unlockedAbilityData) {
+                    // Apply the same level scaling to unlocked abilities
+                    let uaDamage = unlockedAbilityData.damage || 0;
+                    let uaHeal = unlockedAbilityData.heal || 0;
+                    let uaMinroll = unlockedAbilityData.minroll || 0;
+                    let uaRolls = unlockedAbilityData.rolls || 0;
+
+                    // Apply character level modifications to unlocked abilities too
+                    if (accountCharacterLevels) {
+                        const keys = Object.keys(charsData as Record<string, any>);
+                        const charIndex = keys.indexOf(name);
+                        const level = (charIndex >= 0 && accountCharacterLevels[charIndex]) ? accountCharacterLevels[charIndex] : 1;
+                        const upgrades = level - 1;
+                        for (let step = 1; step <= upgrades; step++) {
+                            const tripletIndex = Math.floor((step - 1) / 3);
+                            const pos = (step - 1) % 3;
+                            if (pos === 0) {
+                                const addRolls = tripletIndex === 0 ? 1 : 2;
+                                uaRolls = (uaRolls || 0) + addRolls;
+                            } else if (pos === 1) {
+                                const addDmg = tripletIndex === 0 ? 2 : 4;
+                                uaDamage += addDmg;
+                            } else if (pos === 2) {
+                                uaMinroll = (uaMinroll || 0) + 1;
+                            }
+                        }
+                    }
+
+                    abilities.push({
+                        damage: uaDamage,
+                        heal: uaHeal,
+                        minroll: uaMinroll,
+                        rolls: uaRolls,
+                        type: unlockedAbilityData.type || "Adaptive",
+                        effect: unlockedAbilityName
+                    });
+                }
+            }
+
             PCs[name] = {
                 maxHp: data.maxHp,
                 role: data.role,
                 level: charLevel,
-                ability: {
-                    damage,
-                    heal,
-                    minroll,
-                    rolls,
-                    type: baseAbility.type || "Adaptive",
-                    effect: abilityName
-                }
+                ability: primaryAbility,
+                abilities: abilities
             };
         }
         
@@ -1224,6 +1404,370 @@ app.post('/api/accounts/:username/level-up', async (req: Request, res: Response)
     } catch (e) {
         console.error('Level up error:', e);
         return res.status(500).json({ error: 'Failed to level up' });
+    }
+});
+
+// ==================== COMBAT API ROUTES ====================
+
+// Start a new combat session
+app.post('/api/combat/start', maintenanceGuard, async (req: Request, res: Response) => {
+    try {
+        const { username, chapter, level } = req.body;
+        
+        if (!username || !chapter || !level) {
+            return res.status(400).json({ error: 'Username, chapter, and level are required.' });
+        }
+        
+        // Fetch unit data (reuse existing logic)
+        const chapterNum = Number(chapter);
+        const levelNum = Number(level);
+        
+        // Load character data
+        const charsPath = path.join(__dirname, 'static', 'chars', `ch${chapterNum}.json`);
+        const charsData = require(charsPath);
+        
+        // Load character abilities
+        const charAbilitiesPath = path.join(__dirname, 'static', 'chars', 'abilities.json');
+        const charAbilities = require(charAbilitiesPath);
+        
+        // Load enemy definitions for this chapter
+        const enemiesPath = path.join(__dirname, 'static', 'enemies', `ch${chapterNum}.json`);
+        const enemiesData = require(enemiesPath);
+        
+        // Load level configuration
+        const levelConfigPath = path.join(__dirname, 'static', 'story', 'enemy', `ch${chapterNum}.json`);
+        const levelConfig = require(levelConfigPath);
+        
+        // Load enemy abilities
+        const enemyAbilitiesPath = path.join(__dirname, 'static', 'enemies', 'abilities.json');
+        const enemyAbilities = require(enemyAbilitiesPath);
+        
+        // Get account data for character levels and unlocked abilities
+        let accountCharacterLevels: number[] | null = null;
+        let unlockedAbilities: string[] = [];
+        try {
+            const account = await db.collection<Account>('accounts').findOne({ username });
+            if (account) {
+                const chapterKey = String(chapterNum);
+                const ch = account.chapters?.[chapterKey];
+                if (ch && Array.isArray(ch.characterLevels)) {
+                    accountCharacterLevels = ch.characterLevels.slice();
+                }
+                if (ch?.inventory?.unlockedAbilities && Array.isArray(ch.inventory.unlockedAbilities)) {
+                    unlockedAbilities = ch.inventory.unlockedAbilities;
+                }
+            }
+        } catch (e) {
+            console.warn('Failed to load account for combat:', e);
+        }
+        
+        // Build PC data with abilities
+        const PCs: Record<string, any> = {};
+        const charNames = Object.keys(charsData as Record<string, any>);
+        
+        for (const [name, data] of Object.entries(charsData as Record<string, any>)) {
+            const abilityName = data.ability;
+            const baseAbility = charAbilities[abilityName] || {};
+            
+            let damage = baseAbility.damage || 0;
+            let heal = baseAbility.heal || 0;
+            let minroll = baseAbility.minroll || 0;
+            let rolls = baseAbility.rolls || 0;
+            
+            const charIndex = charNames.indexOf(name);
+            let charLevel = 1;
+            
+            if (accountCharacterLevels && charIndex >= 0 && accountCharacterLevels[charIndex]) {
+                charLevel = accountCharacterLevels[charIndex];
+                const upgrades = charLevel - 1;
+                for (let step = 1; step <= upgrades; step++) {
+                    const tripletIndex = Math.floor((step - 1) / 3);
+                    const pos = (step - 1) % 3;
+                    if (pos === 0) {
+                        rolls += tripletIndex === 0 ? 1 : 2;
+                    } else if (pos === 1) {
+                        damage += tripletIndex === 0 ? 2 : 4;
+                    } else if (pos === 2) {
+                        minroll += 1;
+                    }
+                }
+            }
+            
+            const primaryAbility = {
+                damage,
+                heal,
+                minroll,
+                rolls,
+                type: baseAbility.type || "Adaptive",
+                effect: abilityName,
+                name: abilityName
+            };
+            
+            const abilities = [primaryAbility];
+            
+            // Add unlocked abilities
+            for (const unlockedName of unlockedAbilities) {
+                const unlockedData = charAbilities[unlockedName];
+                if (unlockedData) {
+                    let uaDamage = unlockedData.damage || 0;
+                    let uaHeal = unlockedData.heal || 0;
+                    let uaMinroll = unlockedData.minroll || 0;
+                    let uaRolls = unlockedData.rolls || 0;
+                    
+                    if (accountCharacterLevels && charIndex >= 0) {
+                        const level = accountCharacterLevels[charIndex] || 1;
+                        const upgrades = level - 1;
+                        for (let step = 1; step <= upgrades; step++) {
+                            const tripletIndex = Math.floor((step - 1) / 3);
+                            const pos = (step - 1) % 3;
+                            if (pos === 0) uaRolls += tripletIndex === 0 ? 1 : 2;
+                            else if (pos === 1) uaDamage += tripletIndex === 0 ? 2 : 4;
+                            else if (pos === 2) uaMinroll += 1;
+                        }
+                    }
+                    
+                    abilities.push({
+                        damage: uaDamage,
+                        heal: uaHeal,
+                        minroll: uaMinroll,
+                        rolls: uaRolls,
+                        type: unlockedData.type || "Adaptive",
+                        effect: unlockedName,
+                        name: unlockedName
+                    });
+                }
+            }
+            
+            PCs[name] = {
+                maxHp: data.maxHp,
+                role: data.role,
+                level: charLevel,
+                ability: primaryAbility,
+                abilities: abilities,
+                passives: []
+            };
+        }
+        
+        // Find the level configuration
+        const levelData = levelConfig.levels.find((l: any) => l.level === levelNum);
+        if (!levelData) {
+            return res.status(404).json({ error: `Level ${levelNum} not found in chapter ${chapterNum}.` });
+        }
+        
+        // Get enemy scaling config
+        const levelingCfg = getLevelingConfig();
+        const enemyScaling = levelingCfg.enemyScaling || { enabled: false };
+        const scalingEnabled = enemyScaling.enabled !== false;
+        const startLevel = enemyScaling.startLevel || 2;
+        const perLevel = enemyScaling.perLevel || { hp: 5, damage: 1, rolls: 0.5 };
+        const scalingLevels = Math.max(0, levelNum - startLevel + 1);
+        
+        // Build enemy data
+        const ENs: Record<string, any> = {};
+        const enemyCount: Record<string, number> = {};
+        
+        for (const enemyName of levelData.enemies) {
+            const enemyDef = enemiesData[enemyName];
+            if (!enemyDef) continue;
+            
+            enemyCount[enemyName] = (enemyCount[enemyName] || 0) + 1;
+            const uniqueKey = `EN${Object.keys(ENs).length}`;
+            
+            const abilityNames = enemyDef.abilities || (enemyDef.ability ? [enemyDef.ability] : []);
+            const abilities = abilityNames.map((aName: string, idx: number) => {
+                const abilityData = enemyAbilities[aName] || {};
+                let damage = abilityData.damage || 0;
+                let minroll = abilityData.minroll || 0;
+                let rolls = abilityData.rolls || 0;
+                
+                if (scalingEnabled && scalingLevels > 0) {
+                    damage += Math.floor(scalingLevels * (perLevel.damage || 0));
+                    rolls += Math.floor(scalingLevels * (perLevel.rolls || 0));
+                }
+                
+                return {
+                    name: aName,
+                    damage,
+                    heal: 0,
+                    minroll,
+                    rolls,
+                    type: abilityData.type || "Rolling"
+                };
+            });
+            
+            let maxHp = enemyDef.maxHp || 10;
+            if (scalingEnabled && scalingLevels > 0) {
+                maxHp += Math.floor(scalingLevels * (perLevel.hp || 0));
+            }
+            
+            ENs[uniqueKey] = {
+                maxHp,
+                name: enemyDef.name,
+                level: scalingEnabled ? Math.max(1, levelNum) : 1,
+                ability: abilities[0] || { damage: 0, heal: 0, minroll: 0, rolls: 0, type: "Rolling" },
+                abilities: abilities,
+                passives: Object.keys(enemyDef.passives || {})
+            };
+        }
+        
+        // Create combat session
+        const session = createSession(username, chapterNum, levelNum, PCs, ENs);
+        
+        return res.json({
+            message: 'Combat session started.',
+            sessionId: session.sessionId,
+            state: {
+                units: session.units,
+                phase: session.phase,
+                turn: session.turn,
+                turnOrder: session.turnOrder,
+                enemyActions: session.enemyActions
+            }
+        });
+        
+    } catch (e: any) {
+        console.error('Combat start error:', e);
+        if (e.code === 'MODULE_NOT_FOUND') {
+            return res.status(404).json({ error: 'Chapter data not found.' });
+        }
+        return res.status(500).json({ error: 'Failed to start combat session.' });
+    }
+});
+
+// Get combat session state
+app.get('/api/combat/:sessionId', async (req: Request, res: Response) => {
+    try {
+        const { sessionId } = req.params;
+        const session = getSession(sessionId);
+        
+        if (!session) {
+            return res.status(404).json({ error: 'Combat session not found.' });
+        }
+        
+        const engine = new CombatEngine(session);
+        return res.json({
+            state: engine.getState()
+        });
+        
+    } catch (e) {
+        console.error('Get combat state error:', e);
+        return res.status(500).json({ error: 'Failed to get combat state.' });
+    }
+});
+
+// Submit player actions and execute turn
+app.post('/api/combat/:sessionId/turn', async (req: Request, res: Response) => {
+    try {
+        const { sessionId } = req.params;
+        const { actions } = req.body;
+        
+        if (!actions || typeof actions !== 'object') {
+            return res.status(400).json({ error: 'Actions object is required.' });
+        }
+        
+        const session = getSession(sessionId);
+        if (!session) {
+            return res.status(404).json({ error: 'Combat session not found.' });
+        }
+        
+        if (session.phase !== 'PLANNING') {
+            return res.status(400).json({ error: 'Combat is not in planning phase.' });
+        }
+        
+        // Convert actions to proper format
+        const playerActions: Record<string, CombatAction> = {};
+        for (const [pcId, action] of Object.entries(actions)) {
+            if (action && typeof action === 'object') {
+                const a = action as any;
+                playerActions[pcId] = {
+                    sourceId: pcId,
+                    sourceAbilityIndex: a.sourceAbilityIndex || 0,
+                    targetId: a.targetId,
+                    targetAbilityIndex: a.targetAbilityIndex || 0
+                };
+            }
+        }
+        
+        // Execute turn
+        const result = executeCombatTurn(sessionId, playerActions);
+        
+        if (!result) {
+            return res.status(500).json({ error: 'Failed to execute combat turn.' });
+        }
+        
+        return res.json({
+            events: result.events,
+            state: result.state
+        });
+        
+    } catch (e) {
+        console.error('Combat turn error:', e);
+        return res.status(500).json({ error: 'Failed to execute combat turn.' });
+    }
+});
+
+// Update enemy plan based on player targeting (reactive planning)
+app.post('/api/combat/:sessionId/updateEnemyPlans', async (req: Request, res: Response) => {
+    try {
+        const { sessionId } = req.params;
+        const { pendingActions } = req.body;
+        
+        const session = getSession(sessionId);
+        if (!session) {
+            return res.status(404).json({ error: 'Combat session not found.' });
+        }
+        
+        // Update enemy actions based on who is targeting them
+        const newEnemyActions: Record<string, CombatAction> = { ...session.enemyActions };
+        
+        // For each pending player action, if targeting an enemy ability box,
+        // update that enemy's plan to counter the attacker
+        for (const [pcId, action] of Object.entries(pendingActions || {})) {
+            if (action && typeof action === 'object') {
+                const a = action as any;
+                const enemyId = a.targetId;
+                const abilityIndex = a.targetAbilityIndex || 0;
+                const boxId = `${enemyId}_AB_${abilityIndex}`;
+                
+                // Enemy counters the player who targeted them
+                if (session.units[enemyId]?.type === 'EN') {
+                    newEnemyActions[boxId] = {
+                        sourceId: enemyId,
+                        sourceAbilityIndex: abilityIndex,
+                        targetId: pcId,
+                        targetAbilityIndex: 0
+                    };
+                }
+            }
+        }
+        
+        session.enemyActions = newEnemyActions;
+        
+        return res.json({
+            enemyActions: newEnemyActions
+        });
+        
+    } catch (e) {
+        console.error('Update enemy plans error:', e);
+        return res.status(500).json({ error: 'Failed to update enemy plans.' });
+    }
+});
+
+// End combat session (cleanup)
+app.delete('/api/combat/:sessionId', async (req: Request, res: Response) => {
+    try {
+        const { sessionId } = req.params;
+        const deleted = deleteSession(sessionId);
+        
+        if (!deleted) {
+            return res.status(404).json({ error: 'Combat session not found.' });
+        }
+        
+        return res.json({ message: 'Combat session ended.' });
+        
+    } catch (e) {
+        console.error('End combat error:', e);
+        return res.status(500).json({ error: 'Failed to end combat session.' });
     }
 });
 
