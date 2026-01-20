@@ -3,14 +3,23 @@ import type { Request, Response, NextFunction } from 'express';
 import * as path from 'path';
 import { MongoClient, Db, ObjectId } from 'mongodb';
 import dotenv from 'dotenv';
+import { createServer } from 'http';
 import { 
     createSession, 
-    getSession, 
+    getSession,
+    getSessionByUsername,
     deleteSession, 
-    executeCombatTurn, 
+    executeCombatTurn,
+    updateSession,
+    updateEnemyPlans,
+    markSessionConnected,
+    markSessionDisconnected,
+    initCombatSessionDB,
     CombatEngine,
-    CombatAction 
+    type CombatAction,
+    type CombatSession
 } from './combat-engine';
+import { CombatWebSocketManager } from './websocket-manager';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -1611,11 +1620,13 @@ app.post('/api/combat/start', maintenanceGuard, async (req: Request, res: Respon
         }
         
         // Create combat session
-        const session = createSession(username, chapterNum, levelNum, PCs, ENs);
+        const session = await createSession(username, chapterNum, levelNum, PCs, ENs);
         
         return res.json({
             message: 'Combat session started.',
             sessionId: session.sessionId,
+            // Include WebSocket connection info
+            wsUrl: `/ws/combat?sessionId=${session.sessionId}&username=${encodeURIComponent(username)}`,
             state: {
                 units: session.units,
                 phase: session.phase,
@@ -1638,7 +1649,7 @@ app.post('/api/combat/start', maintenanceGuard, async (req: Request, res: Respon
 app.get('/api/combat/:sessionId', async (req: Request, res: Response) => {
     try {
         const { sessionId } = req.params;
-        const session = getSession(sessionId);
+        const session = await getSession(sessionId);
         
         if (!session) {
             return res.status(404).json({ error: 'Combat session not found.' });
@@ -1665,7 +1676,7 @@ app.post('/api/combat/:sessionId/turn', async (req: Request, res: Response) => {
             return res.status(400).json({ error: 'Actions object is required.' });
         }
         
-        const session = getSession(sessionId);
+        const session = await getSession(sessionId);
         if (!session) {
             return res.status(404).json({ error: 'Combat session not found.' });
         }
@@ -1689,7 +1700,7 @@ app.post('/api/combat/:sessionId/turn', async (req: Request, res: Response) => {
         }
         
         // Execute turn
-        const result = executeCombatTurn(sessionId, playerActions);
+        const result = await executeCombatTurn(sessionId, playerActions);
         
         if (!result) {
             return res.status(500).json({ error: 'Failed to execute combat turn.' });
@@ -1712,36 +1723,17 @@ app.post('/api/combat/:sessionId/updateEnemyPlans', async (req: Request, res: Re
         const { sessionId } = req.params;
         const { pendingActions } = req.body;
         
-        const session = getSession(sessionId);
+        const session = await getSession(sessionId);
         if (!session) {
             return res.status(404).json({ error: 'Combat session not found.' });
         }
         
-        // Update enemy actions based on who is targeting them
-        const newEnemyActions: Record<string, CombatAction> = { ...session.enemyActions };
+        // Use the centralized updateEnemyPlans function
+        const newEnemyActions = await updateEnemyPlans(sessionId, pendingActions);
         
-        // For each pending player action, if targeting an enemy ability box,
-        // update that enemy's plan to counter the attacker
-        for (const [pcId, action] of Object.entries(pendingActions || {})) {
-            if (action && typeof action === 'object') {
-                const a = action as any;
-                const enemyId = a.targetId;
-                const abilityIndex = a.targetAbilityIndex || 0;
-                const boxId = `${enemyId}_AB_${abilityIndex}`;
-                
-                // Enemy counters the player who targeted them
-                if (session.units[enemyId]?.type === 'EN') {
-                    newEnemyActions[boxId] = {
-                        sourceId: enemyId,
-                        sourceAbilityIndex: abilityIndex,
-                        targetId: pcId,
-                        targetAbilityIndex: 0
-                    };
-                }
-            }
+        if (!newEnemyActions) {
+            return res.status(500).json({ error: 'Failed to update enemy plans.' });
         }
-        
-        session.enemyActions = newEnemyActions;
         
         return res.json({
             enemyActions: newEnemyActions
@@ -1757,7 +1749,7 @@ app.post('/api/combat/:sessionId/updateEnemyPlans', async (req: Request, res: Re
 app.delete('/api/combat/:sessionId', async (req: Request, res: Response) => {
     try {
         const { sessionId } = req.params;
-        const deleted = deleteSession(sessionId);
+        const deleted = await deleteSession(sessionId);
         
         if (!deleted) {
             return res.status(404).json({ error: 'Combat session not found.' });
@@ -1768,6 +1760,30 @@ app.delete('/api/combat/:sessionId', async (req: Request, res: Response) => {
     } catch (e) {
         console.error('End combat error:', e);
         return res.status(500).json({ error: 'Failed to end combat session.' });
+    }
+});
+
+// Check for existing active session (reconnection support)
+app.get('/api/combat/check/:username', async (req: Request, res: Response) => {
+    try {
+        const { username } = req.params;
+        const session = await getSessionByUsername(username);
+        
+        if (!session || session.phase === 'VICTORY' || session.phase === 'DEFEAT') {
+            return res.json({ hasActiveSession: false });
+        }
+        
+        const engine = new CombatEngine(session);
+        return res.json({
+            hasActiveSession: true,
+            sessionId: session.sessionId,
+            wsUrl: `/ws/combat?sessionId=${session.sessionId}&username=${encodeURIComponent(username)}`,
+            state: engine.getState()
+        });
+        
+    } catch (e) {
+        console.error('Check session error:', e);
+        return res.status(500).json({ error: 'Failed to check for active session.' });
     }
 });
 
@@ -1782,7 +1798,126 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     res.status(500).json({ error: message });
 });
 
-app.listen(PORT, async () => {
+// Create HTTP server for Express and WebSocket
+const server = createServer(app);
+
+// WebSocket manager (initialized after server starts)
+let wsManager: CombatWebSocketManager | null = null;
+
+// Setup WebSocket handlers
+function setupWebSocketHandlers(manager: CombatWebSocketManager) {
+    // Handle player actions via WebSocket
+    manager.onPlayerAction = async (sessionId: string, action: any) => {
+        const session = await getSession(sessionId);
+        if (!session) {
+            manager.sendToSession(sessionId, {
+                type: 'error',
+                payload: { error: 'Session not found' }
+            });
+            return;
+        }
+        
+        switch (action.type) {
+            case 'execute_turn':
+                // Execute the combat turn
+                const playerActions: Record<string, CombatAction> = {};
+                for (const [pcId, a] of Object.entries(action.actions || {})) {
+                    if (a && typeof a === 'object') {
+                        const actionData = a as any;
+                        playerActions[pcId] = {
+                            sourceId: pcId,
+                            sourceAbilityIndex: actionData.sourceAbilityIndex || 0,
+                            targetId: actionData.targetId,
+                            targetAbilityIndex: actionData.targetAbilityIndex || 0
+                        };
+                    }
+                }
+                
+                const result = await executeCombatTurn(sessionId, playerActions);
+                if (result) {
+                    // Send events and state to client
+                    manager.sendToSession(sessionId, {
+                        type: 'turn_result',
+                        payload: {
+                            events: result.events,
+                            state: result.state
+                        }
+                    });
+                } else {
+                    manager.sendToSession(sessionId, {
+                        type: 'error',
+                        payload: { error: 'Failed to execute turn' }
+                    });
+                }
+                break;
+                
+            case 'update_pending':
+                // Player is updating their pending action (for enemy reactive planning)
+                const pendingActions = action.pendingActions || {};
+                const newEnemyActions = await updateEnemyPlans(sessionId, pendingActions);
+                
+                if (newEnemyActions) {
+                    manager.sendToSession(sessionId, {
+                        type: 'enemy_plans_updated',
+                        payload: { enemyActions: newEnemyActions }
+                    });
+                }
+                break;
+                
+            case 'end_combat':
+                // End the combat session
+                await deleteSession(sessionId);
+                manager.sendToSession(sessionId, {
+                    type: 'combat_ended',
+                    payload: { message: 'Combat session ended' }
+                });
+                break;
+        }
+    };
+    
+    // Handle player reconnection
+    manager.onPlayerReconnect = async (sessionId: string, username: string) => {
+        // First try to get session by ID
+        let session = await getSession(sessionId);
+        
+        // If not found by ID, try to find by username
+        if (!session) {
+            session = await getSessionByUsername(username);
+        }
+        
+        if (!session) {
+            return null;
+        }
+        
+        // Mark as connected
+        await markSessionConnected(session.sessionId);
+        
+        // Return current state
+        const engine = new CombatEngine(session);
+        return {
+            sessionId: session.sessionId,
+            state: engine.getState(),
+            restored: true
+        };
+    };
+    
+    // Handle player disconnect
+    manager.onPlayerDisconnect = async (sessionId: string, _username: string) => {
+        // Just mark as disconnected - session persists in MongoDB
+        await markSessionDisconnected(sessionId);
+    };
+}
+
+server.listen(PORT, async () => {
     await connectToMongo();
+    
+    // Initialize combat session database
+    initCombatSessionDB(db);
+    
+    // Initialize WebSocket manager
+    wsManager = new CombatWebSocketManager(server);
+    setupWebSocketHandlers(wsManager);
+    
     console.log(`Server listening on http://localhost:${PORT}`);
+    console.log(`WebSocket available at ws://localhost:${PORT}/ws/combat`);
 });

@@ -2,7 +2,7 @@
 // SERVER-SIDE COMBAT ENGINE
 // ==========================================
 
-import { ObjectId } from 'mongodb';
+import { ObjectId, Db } from 'mongodb';
 
 // Status Effect Definitions
 export const StatusEffectDefinitions: Record<string, {
@@ -75,6 +75,7 @@ export interface CombatEvent {
 }
 
 export interface CombatSession {
+    _id?: ObjectId;
     sessionId: string;
     username: string;
     chapter: number;
@@ -88,10 +89,27 @@ export interface CombatSession {
     events: CombatEvent[];
     createdAt: Date;
     updatedAt: Date;
+    // WebSocket connection tracking
+    isConnected: boolean;
+    lastDisconnect: Date | null;
 }
 
-// In-memory session storage (for production, use Redis or MongoDB)
-const activeSessions: Map<string, CombatSession> = new Map();
+// In-memory cache for active sessions (backed by MongoDB)
+const sessionCache: Map<string, CombatSession> = new Map();
+
+// MongoDB database reference (set by initCombatSessionDB)
+let combatDb: Db | null = null;
+
+// Initialize MongoDB for combat sessions
+export function initCombatSessionDB(db: Db): void {
+    combatDb = db;
+    console.log('Combat session DB initialized');
+    
+    // Create index for sessionId and username
+    db.collection('combat_sessions').createIndex({ sessionId: 1 }, { unique: true });
+    db.collection('combat_sessions').createIndex({ username: 1 });
+    db.collection('combat_sessions').createIndex({ createdAt: 1 }, { expireAfterSeconds: 86400 }); // 24 hour TTL
+}
 
 // Generate unique session ID
 function generateSessionId(): string {
@@ -1085,14 +1103,24 @@ export class CombatEngine {
     }
 }
 
-// Session Management Functions
-export function createSession(
+// Session Management Functions with MongoDB persistence
+
+// Create a new combat session and store in MongoDB
+export async function createSession(
     username: string,
     chapter: number,
     level: number,
     pcData: Record<string, any>,
     enemyData: Record<string, any>
-): CombatSession {
+): Promise<CombatSession> {
+    // Check for existing active session for this user
+    const existingSession = await getSessionByUsername(username);
+    if (existingSession && existingSession.phase !== 'VICTORY' && existingSession.phase !== 'DEFEAT') {
+        // Return existing session if still active
+        console.log(`Returning existing session for user ${username}: ${existingSession.sessionId}`);
+        return existingSession;
+    }
+    
     const sessionId = generateSessionId();
     
     const units: Record<string, CombatUnit> = {};
@@ -1146,7 +1174,9 @@ export function createSession(
         pendingActions: {},
         events: [],
         createdAt: new Date(),
-        updatedAt: new Date()
+        updatedAt: new Date(),
+        isConnected: true,
+        lastDisconnect: null
     };
     
     // Initialize turn order and enemy plans
@@ -1154,25 +1184,142 @@ export function createSession(
     engine.rollSpeeds();
     engine.computeEnemyPlans();
     
-    // Store session
-    activeSessions.set(sessionId, session);
+    // Store in cache
+    sessionCache.set(sessionId, session);
+    
+    // Store in MongoDB
+    if (combatDb) {
+        try {
+            await combatDb.collection<CombatSession>('combat_sessions').insertOne(session);
+            console.log(`Combat session saved to MongoDB: ${sessionId}`);
+        } catch (e) {
+            console.error('Failed to save combat session to MongoDB:', e);
+        }
+    }
     
     return session;
 }
 
-export function getSession(sessionId: string): CombatSession | null {
-    return activeSessions.get(sessionId) || null;
+// Get session from cache or MongoDB
+export async function getSession(sessionId: string): Promise<CombatSession | null> {
+    // Check cache first
+    const cached = sessionCache.get(sessionId);
+    if (cached) {
+        return cached;
+    }
+    
+    // Load from MongoDB
+    if (combatDb) {
+        try {
+            const session = await combatDb.collection<CombatSession>('combat_sessions').findOne({ sessionId });
+            if (session) {
+                // Add to cache
+                sessionCache.set(sessionId, session);
+                return session;
+            }
+        } catch (e) {
+            console.error('Failed to load combat session from MongoDB:', e);
+        }
+    }
+    
+    return null;
 }
 
-export function deleteSession(sessionId: string): boolean {
-    return activeSessions.delete(sessionId);
+// Get active session for a user
+export async function getSessionByUsername(username: string): Promise<CombatSession | null> {
+    // Check cache first
+    for (const session of sessionCache.values()) {
+        if (session.username === username && session.phase !== 'VICTORY' && session.phase !== 'DEFEAT') {
+            return session;
+        }
+    }
+    
+    // Load from MongoDB
+    if (combatDb) {
+        try {
+            const session = await combatDb.collection<CombatSession>('combat_sessions').findOne({
+                username,
+                phase: { $nin: ['VICTORY', 'DEFEAT'] }
+            }, { sort: { createdAt: -1 } });
+            
+            if (session) {
+                // Add to cache
+                sessionCache.set(session.sessionId, session);
+                return session;
+            }
+        } catch (e) {
+            console.error('Failed to load user combat session from MongoDB:', e);
+        }
+    }
+    
+    return null;
 }
 
-export function executeCombatTurn(
+// Update session in cache and MongoDB
+export async function updateSession(session: CombatSession): Promise<void> {
+    session.updatedAt = new Date();
+    
+    // Update cache
+    sessionCache.set(session.sessionId, session);
+    
+    // Update MongoDB
+    if (combatDb) {
+        try {
+            await combatDb.collection<CombatSession>('combat_sessions').updateOne(
+                { sessionId: session.sessionId },
+                { $set: session },
+                { upsert: true }
+            );
+        } catch (e) {
+            console.error('Failed to update combat session in MongoDB:', e);
+        }
+    }
+}
+
+// Mark session as disconnected (player left but can rejoin)
+export async function markSessionDisconnected(sessionId: string): Promise<void> {
+    const session = await getSession(sessionId);
+    if (session) {
+        session.isConnected = false;
+        session.lastDisconnect = new Date();
+        await updateSession(session);
+    }
+}
+
+// Mark session as connected (player rejoined)
+export async function markSessionConnected(sessionId: string): Promise<void> {
+    const session = await getSession(sessionId);
+    if (session) {
+        session.isConnected = true;
+        session.lastDisconnect = null;
+        await updateSession(session);
+    }
+}
+
+// Delete session from cache and MongoDB
+export async function deleteSession(sessionId: string): Promise<boolean> {
+    // Remove from cache
+    const cached = sessionCache.delete(sessionId);
+    
+    // Remove from MongoDB
+    if (combatDb) {
+        try {
+            const result = await combatDb.collection('combat_sessions').deleteOne({ sessionId });
+            return cached || result.deletedCount > 0;
+        } catch (e) {
+            console.error('Failed to delete combat session from MongoDB:', e);
+        }
+    }
+    
+    return cached;
+}
+
+// Execute combat turn with MongoDB persistence
+export async function executeCombatTurn(
     sessionId: string,
     playerActions: Record<string, CombatAction>
-): { events: CombatEvent[]; state: ReturnType<CombatEngine['getState']> } | null {
-    const session = activeSessions.get(sessionId);
+): Promise<{ events: CombatEvent[]; state: ReturnType<CombatEngine['getState']> } | null> {
+    const session = await getSession(sessionId);
     if (!session) return null;
     
     session.pendingActions = playerActions;
@@ -1184,8 +1331,75 @@ export function executeCombatTurn(
     // Store events in session history
     session.events.push(...events);
     
+    // Persist to MongoDB
+    await updateSession(session);
+    
     return {
         events,
         state: engine.getState()
     };
+}
+
+// Update enemy plans and persist
+export async function updateEnemyPlans(
+    sessionId: string,
+    pendingActions: Record<string, { targetId: string; targetAbilityIndex?: number }>
+): Promise<Record<string, CombatAction> | null> {
+    const session = await getSession(sessionId);
+    if (!session) return null;
+    
+    const newEnemyActions: Record<string, CombatAction> = { ...session.enemyActions };
+    
+    // For each pending player action, if targeting an enemy ability box,
+    // update that enemy's plan to counter the attacker
+    for (const [pcId, action] of Object.entries(pendingActions || {})) {
+        if (action && typeof action === 'object') {
+            const enemyId = action.targetId;
+            const abilityIndex = action.targetAbilityIndex || 0;
+            const boxId = `${enemyId}_AB_${abilityIndex}`;
+            
+            // Enemy counters the player who targeted them
+            if (session.units[enemyId]?.type === 'EN') {
+                newEnemyActions[boxId] = {
+                    sourceId: enemyId,
+                    sourceAbilityIndex: abilityIndex,
+                    targetId: pcId,
+                    targetAbilityIndex: 0
+                };
+            }
+        }
+    }
+    
+    session.enemyActions = newEnemyActions;
+    await updateSession(session);
+    
+    return newEnemyActions;
+}
+
+// Cleanup old disconnected sessions (call periodically)
+export async function cleanupOldSessions(): Promise<number> {
+    if (!combatDb) return 0;
+    
+    const cutoffTime = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24 hours ago
+    
+    try {
+        const result = await combatDb.collection('combat_sessions').deleteMany({
+            $or: [
+                { lastDisconnect: { $lt: cutoffTime } },
+                { createdAt: { $lt: cutoffTime } }
+            ]
+        });
+        
+        // Also clean up cache
+        for (const [sessionId, session] of sessionCache.entries()) {
+            if (session.createdAt < cutoffTime || (session.lastDisconnect && session.lastDisconnect < cutoffTime)) {
+                sessionCache.delete(sessionId);
+            }
+        }
+        
+        return result.deletedCount;
+    } catch (e) {
+        console.error('Failed to cleanup old sessions:', e);
+        return 0;
+    }
 }

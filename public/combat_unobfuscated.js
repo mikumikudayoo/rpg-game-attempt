@@ -467,10 +467,204 @@ async function fetchUnitData(chapter = 1, level = 1) {
 }
 
 // ==========================================
-// SERVER-SIDE COMBAT API
+// SERVER-SIDE COMBAT API WITH WEBSOCKET
 // ==========================================
 
-// Start a server-side combat session
+// WebSocket connection for real-time combat
+let combatWebSocket = null;
+let wsReconnectAttempts = 0;
+const MAX_WS_RECONNECT_ATTEMPTS = 5;
+
+// Initialize WebSocket connection for combat
+function initCombatWebSocket(sessionId, username) {
+    return new Promise((resolve, reject) => {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws/combat?sessionId=${encodeURIComponent(sessionId)}&username=${encodeURIComponent(username)}`;
+        
+        console.log('Connecting to combat WebSocket:', wsUrl);
+        
+        try {
+            combatWebSocket = new WebSocket(wsUrl);
+            
+            combatWebSocket.onopen = () => {
+                console.log('Combat WebSocket connected');
+                wsReconnectAttempts = 0;
+                GameState.wsConnected = true;
+                log('Real-time connection established.', 'sys');
+                resolve(true);
+            };
+            
+            combatWebSocket.onmessage = (event) => {
+                try {
+                    const message = JSON.parse(event.data);
+                    handleWebSocketMessage(message);
+                } catch (e) {
+                    console.error('Failed to parse WebSocket message:', e);
+                }
+            };
+            
+            combatWebSocket.onclose = (event) => {
+                console.log('Combat WebSocket closed:', event.code, event.reason);
+                GameState.wsConnected = false;
+                
+                // Attempt to reconnect if not a clean close
+                if (event.code !== 1000 && event.code !== 1001 && wsReconnectAttempts < MAX_WS_RECONNECT_ATTEMPTS) {
+                    wsReconnectAttempts++;
+                    console.log(`Attempting WebSocket reconnect (${wsReconnectAttempts}/${MAX_WS_RECONNECT_ATTEMPTS})...`);
+                    setTimeout(() => {
+                        if (GameState.combatSessionId) {
+                            const user = getLoggedInUser ? getLoggedInUser() : null;
+                            if (user) {
+                                initCombatWebSocket(GameState.combatSessionId, user.username);
+                            }
+                        }
+                    }, 2000 * wsReconnectAttempts);
+                }
+            };
+            
+            combatWebSocket.onerror = (error) => {
+                console.error('Combat WebSocket error:', error);
+                GameState.wsConnected = false;
+                reject(error);
+            };
+            
+        } catch (e) {
+            console.error('Failed to create WebSocket:', e);
+            reject(e);
+        }
+    });
+}
+
+// Handle incoming WebSocket messages
+function handleWebSocketMessage(message) {
+    console.log('WS message received:', message.type);
+    
+    switch (message.type) {
+        case 'connected':
+            log('Connected to combat server.', 'sys');
+            break;
+            
+        case 'session_restored':
+            // Session was restored after reconnection
+            log('Combat session restored!', 'sys');
+            if (message.payload && message.payload.state) {
+                syncWithServerState(message.payload.state);
+                GameState.combatSessionId = message.payload.sessionId || GameState.combatSessionId;
+            }
+            break;
+            
+        case 'state_update':
+            // General state update
+            if (message.payload) {
+                syncWithServerState(message.payload);
+            }
+            break;
+            
+        case 'turn_result':
+            // Turn execution results
+            if (message.payload) {
+                handleTurnResult(message.payload);
+            }
+            break;
+            
+        case 'enemy_plans_updated':
+            // Enemy plans updated based on player targeting
+            if (message.payload && message.payload.enemyActions) {
+                convertServerEnemyActions(message.payload.enemyActions);
+                drawAllActions();
+            }
+            break;
+            
+        case 'combat_ended':
+            log('Combat session ended.', 'sys');
+            GameState.combatSessionId = null;
+            break;
+            
+        case 'error':
+            console.error('Server error:', message.payload?.error);
+            log('Server error: ' + (message.payload?.error || 'Unknown error'), 'sys');
+            break;
+            
+        case 'pong':
+            // Heartbeat response - ignore
+            break;
+            
+        default:
+            console.log('Unknown WebSocket message type:', message.type);
+    }
+}
+
+// Handle turn result from WebSocket
+async function handleTurnResult(result) {
+    const { events, state } = result;
+    
+    // Display combat events with animations
+    if (events && events.length > 0) {
+        await displayCombatEvents(events);
+    }
+    
+    // Sync state after events
+    if (state) {
+        syncWithServerState(state);
+    }
+    
+    // Handle victory/defeat
+    if (state.phase === 'VICTORY') {
+        await showVictorySequence();
+    } else if (state.phase === 'DEFEAT') {
+        await showDefeatSequence();
+    } else if (state.phase === 'PLANNING') {
+        // Ready for next turn
+        GameState.phase = 'PLANNING';
+        btnTurn.disabled = false;
+        btnTurn.innerText = "INITIATE COMBAT";
+    }
+}
+
+// Send message via WebSocket
+function sendWebSocketMessage(type, payload = {}) {
+    if (!combatWebSocket || combatWebSocket.readyState !== WebSocket.OPEN) {
+        console.warn('WebSocket not connected, falling back to REST API');
+        return false;
+    }
+    
+    try {
+        combatWebSocket.send(JSON.stringify({ type, payload }));
+        return true;
+    } catch (e) {
+        console.error('Failed to send WebSocket message:', e);
+        return false;
+    }
+}
+
+// Close WebSocket connection
+function closeCombatWebSocket() {
+    if (combatWebSocket) {
+        combatWebSocket.close(1000, 'Combat ended');
+        combatWebSocket = null;
+    }
+    GameState.wsConnected = false;
+}
+
+// Check for existing active session on page load
+async function checkExistingSession(username) {
+    try {
+        const res = await fetch(`/api/combat/check/${encodeURIComponent(username)}`);
+        if (!res.ok) return null;
+        
+        const data = await res.json();
+        if (data.hasActiveSession) {
+            console.log('Found existing session:', data.sessionId);
+            return data;
+        }
+        return null;
+    } catch (e) {
+        console.error('Error checking for existing session:', e);
+        return null;
+    }
+}
+
+// Start a server-side combat session with WebSocket
 async function startServerCombat() {
     try {
         const user = getLoggedInUser && typeof getLoggedInUser === 'function' ? getLoggedInUser() : null;
@@ -478,6 +672,22 @@ async function startServerCombat() {
             console.warn('No logged in user, falling back to client-side combat');
             GameState.useServerCombat = false;
             return null;
+        }
+        
+        // Check for existing active session first
+        const existingSession = await checkExistingSession(user.username);
+        if (existingSession && existingSession.hasActiveSession) {
+            log('Restoring previous combat session...', 'sys');
+            GameState.combatSessionId = existingSession.sessionId;
+            
+            // Connect via WebSocket
+            try {
+                await initCombatWebSocket(existingSession.sessionId, user.username);
+            } catch (e) {
+                console.warn('Failed to connect WebSocket, using REST fallback');
+            }
+            
+            return existingSession;
         }
         
         const { chapter, level } = getUrlParams();
@@ -502,6 +712,14 @@ async function startServerCombat() {
         GameState.combatSessionId = data.sessionId;
         
         console.log('Server combat session started:', data.sessionId);
+        
+        // Connect via WebSocket
+        try {
+            await initCombatWebSocket(data.sessionId, user.username);
+        } catch (e) {
+            console.warn('Failed to connect WebSocket, using REST fallback');
+        }
+        
         return data;
     } catch (e) {
         console.error('Error starting server combat:', e);
@@ -537,7 +755,44 @@ async function executeServerTurn(actions) {
     }
 }
 
-// Update enemy plans based on pending player actions
+// Send player actions to server and execute turn (with WebSocket support)
+async function executeServerTurn(actions) {
+    if (!GameState.combatSessionId) {
+        console.error('No combat session active');
+        return null;
+    }
+    
+    // Try WebSocket first if connected
+    if (GameState.wsConnected && combatWebSocket && combatWebSocket.readyState === WebSocket.OPEN) {
+        const sent = sendWebSocketMessage('execute_turn', { actions });
+        if (sent) {
+            // Result will come via WebSocket message handler
+            return { pending: true };
+        }
+    }
+    
+    // Fall back to REST API
+    try {
+        const res = await fetch(`/api/combat/${GameState.combatSessionId}/turn`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ actions })
+        });
+        
+        if (!res.ok) {
+            console.error('Failed to execute server turn:', await res.text());
+            return null;
+        }
+        
+        const data = await res.json();
+        return data;
+    } catch (e) {
+        console.error('Error executing server turn:', e);
+        return null;
+    }
+}
+
+// Update enemy plans based on pending player actions (with WebSocket support)
 async function updateServerEnemyPlans() {
     if (!GameState.combatSessionId) return;
     
@@ -559,6 +814,16 @@ async function updateServerEnemyPlans() {
             }
         }
         
+        // Try WebSocket first if connected
+        if (GameState.wsConnected && combatWebSocket && combatWebSocket.readyState === WebSocket.OPEN) {
+            const sent = sendWebSocketMessage('update_pending', { pendingActions });
+            if (sent) {
+                // Result will come via WebSocket message handler
+                return;
+            }
+        }
+        
+        // Fall back to REST API
         const res = await fetch(`/api/combat/${GameState.combatSessionId}/updateEnemyPlans`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -708,8 +973,11 @@ function syncWithServerState(serverState) {
     convertServerEnemyActions(serverState.enemyActions);
 }
 
-// End server combat session
+// End server combat session (with WebSocket cleanup)
 async function endServerCombat() {
+    // Close WebSocket connection
+    closeCombatWebSocket();
+    
     if (!GameState.combatSessionId) return;
     
     try {
@@ -753,7 +1021,8 @@ let GameState = {
     
     // Server-side combat session
     combatSessionId: null,
-    useServerCombat: true // Toggle for server-side combat
+    useServerCombat: true, // Toggle for server-side combat
+    wsConnected: false // WebSocket connection status
 };
 
 let Script = [{ speaker: "", text: "" }];
