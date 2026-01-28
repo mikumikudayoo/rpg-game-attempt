@@ -1,0 +1,109 @@
+{
+    "pullCost": 100,
+    "multiPullCount": 10,
+    "maxDuplicates": 5,
+    "rarityWeights": {
+        "common": 50,
+        "uncommon": 30,
+        "rare": 15,
+        "epic": 4,
+        "legendary": 1
+    },
+    "chapters": {
+        "1": {
+            "name": "Mindustry",
+            "hasGacha": false,
+            "abilities": []
+        },
+        "2": {
+            "name": "Item Asylum",
+            "hasGacha": true,
+            "abilities": [
+                { "name": "Reparametize", "rarity": "uncommon", "type": "passive", "description": "Heal 2 HP each turn", "func": "regeneration" },
+                { "name": "Protection Function", "rarity": "uncommon", "type": "passive", "description": "Reduce damage taken by 1", "func": "fortify" },
+                { "name": "Charged Attack", "rarity": "rare", "type": "ability", "description": "+3 damage on attacks", "func": "powerStrike" },
+                { "name": "Haste Leap", "rarity": "common", "type": "ability", "description": "+1 speed on rolls", "func": "quickStep" },
+                { "name": "StealPatch", "rarity": "epic", "type": "ability", "description": "Heal 50% of damage dealt", "func": "lifesteal" }
+            ]
+        },
+        "3": {
+            "name": "Forsaken",
+            "hasGacha": true,
+            "abilities": [
+                { "name": "Better Body Parameters", "rarity": "uncommon", "type": "stat", "description": "+10 max HP", "func": "bonusHp" },
+                { "name": "Increased Potency", "rarity": "uncommon", "type": "stat", "description": "+3 attack damage", "func": "bonusDamage" },
+                { "name": "Corrupted", "rarity": "rare", "type": "ability", "description": "Apply 2 Poison on hit", "func": "venomous" },
+                { "name": "Net Leaking", "rarity": "common", "type": "ability", "description": "Apply 1 Bleed on hit", "func": "hemorrhage" }
+            ]
+        },
+        "4": {
+            "name": "Die of Death",
+            "hasGacha": true,
+            "abilities": [
+                { "name": "Firewalled", "rarity": "rare", "type": "ability", "description": "Apply 2 Burn on hit", "func": "searing" },
+                { "name": "Unstable Code", "rarity": "epic", "type": "ability", "description": "Apply 1 Rupture on hit", "func": "rend" },
+                { "name": "Lucky Dice", "rarity": "legendary", "type": "passive", "description": "20% chance to double damage", "func": "luckyStrike" },
+                { "name": "Death's Touch", "rarity": "epic", "type": "ability", "description": "Instant kill enemies below 10% HP", "func": "execute" }
+            ]
+        },
+        "5": {
+            "name": "Phasmophobia",
+            "hasGacha": true,
+            "abilities": [
+                { "name": "Ghost Sense", "rarity": "common", "type": "passive", "description": "Detect enemy weaknesses", "func": "analyze" },
+                { "name": "Spirit Link", "rarity": "rare", "type": "ability", "description": "Share damage with an ally", "func": "soulBond" },
+                { "name": "Haunting", "rarity": "epic", "type": "ability", "description": "Fear enemies, reduce their damage", "func": "terrify" },
+                { "name": "Phantom Form", "rarity": "legendary", "type": "passive", "description": "25% chance to dodge attacks", "func": "ethereal" }
+            ]
+        },
+        "6": {
+            "name": "Forsaken Part 2",
+            "hasGacha": true,
+            "abilities": [
+                { "name": "Void Shield", "rarity": "rare", "type": "passive", "description": "Absorb first hit each turn", "func": "voidBarrier" },
+                { "name": "Noli's Blessing", "rarity": "legendary", "type": "passive", "description": "Revive once per battle with 50% HP", "func": "resurrection" },
+                { "name": "Abyss Walker", "rarity": "epic", "type": "ability", "description": "Teleport behind enemy, +2 crit", "func": "shadowStep" }
+            ]
+        },
+        "7": {
+            "name": "Project Sekai",
+            "hasGacha": true,
+            "abilities": [
+                { "name": "Harmony", "rarity": "common", "type": "ability", "description": "Heal all allies for 1 HP", "func": "groupHeal" },
+                { "name": "Vocal Burst", "rarity": "rare", "type": "ability", "description": "AoE damage to all enemies", "func": "soundwave" },
+                { "name": "Fever Mode", "rarity": "epic", "type": "passive", "description": "All stats +1 when HP below 50%", "func": "desperado" },
+                { "name": "World is Mine", "rarity": "legendary", "type": "ability", "description": "Triple next attack damage", "func": "ultimateStrike" }
+            ]
+        },
+        "8": {
+            "name": "Limbus Company",
+            "hasGacha": true,
+            "abilities": [
+                { "name": "E.G.O Awakening", "rarity": "epic", "type": "passive", "description": "Transform when HP critical", "func": "berserk" },
+                { "name": "Sinner's Resolve", "rarity": "rare", "type": "passive", "description": "+2 damage when fighting alone", "func": "lastStand" },
+                { "name": "Dante's Command", "rarity": "legendary", "type": "ability", "description": "Force enemy to attack their ally", "func": "mindControl" },
+                { "name": "Abnormality", "rarity": "common", "type": "ability", "description": "Random effect on hit", "func": "chaos" }
+            ]
+        },
+        "9": {
+            "name": "Battle Bricks",
+            "hasGacha": true,
+            "abilities": [
+                { "name": "Brick Wall", "rarity": "common", "type": "passive", "description": "+2 defense", "func": "fortification" },
+                { "name": "Demolition", "rarity": "rare", "type": "ability", "description": "Destroy enemy defense", "func": "armorBreak" },
+                { "name": "Master Builder", "rarity": "epic", "type": "ability", "description": "Build turret that attacks", "func": "summonTurret" },
+                { "name": "Mega Build", "rarity": "legendary", "type": "passive", "description": "Gain shield equal to damage dealt", "func": "overShield" }
+            ]
+        },
+        "10": {
+            "name": "Recapitulation",
+            "hasGacha": true,
+            "abilities": [
+                { "name": "Memory Flash", "rarity": "common", "type": "ability", "description": "Repeat last action", "func": "echo" },
+                { "name": "Time Loop", "rarity": "epic", "type": "ability", "description": "Reset to turn start once per battle", "func": "rewind" },
+                { "name": "Nostalgia", "rarity": "rare", "type": "passive", "description": "Gain buffs from previous chapters", "func": "inheritance" },
+                { "name": "Final Recap", "rarity": "legendary", "type": "ability", "description": "Use all unlocked abilities at once", "func": "omnibus" }
+            ]
+        }
+    }
+}

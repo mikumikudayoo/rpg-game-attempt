@@ -52,7 +52,8 @@ interface ChapterProgress {
     inventory: {
         currency: number;
         pulls: number;
-        unlockedAbilities: string[];
+        unlockedAbilities: string[]; // Legacy: list of ability names
+        abilityInventory: Record<string, number>; // New: ability name -> count (max 5)
     };
 }
 
@@ -93,7 +94,8 @@ function getDefaultChapterProgress(chapterNum: number = 1, unlocked: boolean = t
         inventory: {
             currency: 1000,
             pulls: 10,
-            unlockedAbilities: []
+            unlockedAbilities: [],
+            abilityInventory: {}
         }
     };
 }
@@ -1413,6 +1415,236 @@ app.post('/api/accounts/:username/level-up', async (req: Request, res: Response)
     } catch (e) {
         console.error('Level up error:', e);
         return res.status(500).json({ error: 'Failed to level up' });
+    }
+});
+
+// ==================== GACHA API ROUTES ====================
+
+// Gacha config cache
+let gachaConfig: any = null;
+
+function getGachaConfig() {
+    if (gachaConfig) return gachaConfig;
+    try {
+        const fs = require('fs');
+        const configPath = path.join(__dirname, 'static', 'gacha', 'config.json');
+        if (fs.existsSync(configPath)) {
+            gachaConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+            return gachaConfig;
+        }
+    } catch (e) {
+        console.warn('Could not load gacha config:', e);
+    }
+    // Fallback defaults
+    return {
+        pullCost: 100,
+        multiPullCount: 10,
+        maxDuplicates: 5,
+        rarityWeights: { common: 50, uncommon: 30, rare: 15, epic: 4, legendary: 1 },
+        chapters: {}
+    };
+}
+
+// Weighted random selection based on rarity
+function selectAbilityByRarity(abilities: any[], rarityWeights: Record<string, number>): any {
+    // Calculate total weight
+    const totalWeight = Object.values(rarityWeights).reduce((a, b) => a + b, 0);
+    
+    // Roll for rarity
+    let roll = Math.random() * totalWeight;
+    let selectedRarity = 'common';
+    
+    for (const [rarity, weight] of Object.entries(rarityWeights)) {
+        roll -= weight;
+        if (roll <= 0) {
+            selectedRarity = rarity;
+            break;
+        }
+    }
+    
+    // Filter abilities by selected rarity
+    const matchingAbilities = abilities.filter(a => a.rarity === selectedRarity);
+    
+    // If no abilities of that rarity, fall back to any ability
+    if (matchingAbilities.length === 0) {
+        return abilities[Math.floor(Math.random() * abilities.length)];
+    }
+    
+    // Return random ability from matching rarity
+    return matchingAbilities[Math.floor(Math.random() * matchingAbilities.length)];
+}
+
+// Get gacha info for a chapter
+app.get('/api/gacha/:chapter', async (req: Request, res: Response) => {
+    try {
+        const chapterNum = parseInt(req.params.chapter || '1');
+        const config = getGachaConfig();
+        const chapterConfig = config.chapters[String(chapterNum)];
+        
+        if (!chapterConfig) {
+            return res.status(404).json({ error: 'Chapter not found' });
+        }
+        
+        if (!chapterConfig.hasGacha) {
+            return res.status(400).json({ error: 'This chapter does not have a gacha system' });
+        }
+        
+        return res.json({
+            chapter: chapterNum,
+            name: chapterConfig.name,
+            pullCost: config.pullCost,
+            multiPullCount: config.multiPullCount,
+            maxDuplicates: config.maxDuplicates,
+            rarityWeights: config.rarityWeights,
+            abilities: chapterConfig.abilities
+        });
+    } catch (e) {
+        console.error('Get gacha info error:', e);
+        return res.status(500).json({ error: 'Failed to get gacha info' });
+    }
+});
+
+// Perform gacha pull(s)
+app.post('/api/gacha/:chapter/pull', maintenanceGuard, async (req: Request, res: Response) => {
+    try {
+        const { username, count } = req.body;
+        const chapterNum = parseInt(req.params.chapter || '1');
+        const pullCount = count === 10 ? 10 : 1; // Only allow 1 or 10 pulls
+        
+        if (!username) {
+            return res.status(400).json({ error: 'Username is required' });
+        }
+        
+        const config = getGachaConfig();
+        const chapterConfig = config.chapters[String(chapterNum)];
+        
+        if (!chapterConfig || !chapterConfig.hasGacha) {
+            return res.status(400).json({ error: 'This chapter does not have a gacha system' });
+        }
+        
+        if (!chapterConfig.abilities || chapterConfig.abilities.length === 0) {
+            return res.status(400).json({ error: 'No abilities available in this chapter gacha' });
+        }
+        
+        const totalCost = config.pullCost * pullCount;
+        const chapterKey = String(chapterNum);
+        
+        // Get account
+        const account = await db.collection<Account>('accounts').findOne({ username });
+        if (!account) {
+            return res.status(404).json({ error: 'Account not found' });
+        }
+        
+        // Check if chapter is unlocked and has inventory
+        const chapterData = account.chapters?.[chapterKey];
+        if (!chapterData) {
+            return res.status(400).json({ error: 'Chapter not unlocked' });
+        }
+        
+        const currentCurrency = chapterData.inventory?.currency || 0;
+        if (currentCurrency < totalCost) {
+            return res.status(400).json({ 
+                error: 'Not enough currency', 
+                required: totalCost, 
+                current: currentCurrency 
+            });
+        }
+        
+        // Get current ability inventory (or initialize it)
+        const abilityInventory: Record<string, number> = chapterData.inventory?.abilityInventory || {};
+        
+        // Perform pulls
+        const results: { ability: any; isNew: boolean; isDuplicate: boolean; wasWasted: boolean }[] = [];
+        
+        for (let i = 0; i < pullCount; i++) {
+            const ability = selectAbilityByRarity(chapterConfig.abilities, config.rarityWeights);
+            const currentCount = abilityInventory[ability.name] || 0;
+            
+            const isNew = currentCount === 0;
+            const wasWasted = currentCount >= config.maxDuplicates;
+            const isDuplicate = currentCount > 0 && currentCount < config.maxDuplicates;
+            
+            // Add to inventory if not at max
+            if (!wasWasted) {
+                abilityInventory[ability.name] = currentCount + 1;
+            }
+            
+            results.push({
+                ability,
+                isNew,
+                isDuplicate,
+                wasWasted
+            });
+        }
+        
+        // Update database
+        const currencyPath = `chapters.${chapterKey}.inventory.currency`;
+        const inventoryPath = `chapters.${chapterKey}.inventory.abilityInventory`;
+        const unlockedPath = `chapters.${chapterKey}.inventory.unlockedAbilities`;
+        
+        // Build list of newly unlocked abilities for legacy support
+        const newlyUnlocked = results
+            .filter(r => r.isNew)
+            .map(r => r.ability.name);
+        
+        const updateOps: any = {
+            $inc: { [currencyPath]: -totalCost },
+            $set: { [inventoryPath]: abilityInventory }
+        };
+        
+        // Add newly unlocked to the legacy array
+        if (newlyUnlocked.length > 0) {
+            updateOps.$addToSet = { [unlockedPath]: { $each: newlyUnlocked } };
+        }
+        
+        await db.collection<Account>('accounts').updateOne({ username }, updateOps);
+        
+        return res.json({
+            success: true,
+            results,
+            cost: totalCost,
+            remainingCurrency: currentCurrency - totalCost,
+            abilityInventory,
+            newAbilities: newlyUnlocked.length,
+            wastedPulls: results.filter(r => r.wasWasted).length
+        });
+        
+    } catch (e) {
+        console.error('Gacha pull error:', e);
+        return res.status(500).json({ error: 'Failed to perform gacha pull' });
+    }
+});
+
+// Get user's ability inventory for a chapter
+app.get('/api/gacha/:chapter/inventory/:username', async (req: Request, res: Response) => {
+    try {
+        const { chapter, username } = req.params;
+        const chapterNum = parseInt(chapter || '1');
+        const chapterKey = String(chapterNum);
+        
+        const account = await db.collection<Account>('accounts').findOne({ username });
+        if (!account) {
+            return res.status(404).json({ error: 'Account not found' });
+        }
+        
+        const chapterData = account.chapters?.[chapterKey];
+        if (!chapterData) {
+            return res.status(400).json({ error: 'Chapter not unlocked' });
+        }
+        
+        const config = getGachaConfig();
+        
+        return res.json({
+            chapter: chapterNum,
+            currency: chapterData.inventory?.currency || 0,
+            abilityInventory: chapterData.inventory?.abilityInventory || {},
+            unlockedAbilities: chapterData.inventory?.unlockedAbilities || [],
+            maxDuplicates: config.maxDuplicates
+        });
+        
+    } catch (e) {
+        console.error('Get inventory error:', e);
+        return res.status(500).json({ error: 'Failed to get inventory' });
     }
 });
 

@@ -450,28 +450,42 @@
             }
         ];
 
-        // Player data - currency per chapter
-        let chapterCurrency = {
-            2: 10,  // Chaos Tokens
-            3: 10,  // Void Shards
-            4: 10,  // Death Dice
-            5: 10,  // Ghost Orbs
-            6: 10,  // Abyss Fragments
-            7: 10,  // Crystal Shards
-            8: 10,  // Enkephalin
-            9: 10,  // Brick Coins
-            10: 10  // Memory Cores
-        };
-        let unlockedParameters = [];
+        // Server-side gacha data
+        let gachaConfig = null;
+        let abilityInventory = {}; // { abilityName: count }
+        let chapterCurrency = 0;
+        const maxDuplicates = 5;
 
-        // Rarity weights for gacha
-        const rarityWeights = {
-            common: 50,
-            uncommon: 30,
-            rare: 15,
-            epic: 4,
-            legendary: 1
-        };
+        // Fetch gacha config from server
+        async function fetchGachaConfig() {
+            try {
+                const res = await fetch(`/api/gacha/${currentChapter}`);
+                if (res.ok) {
+                    gachaConfig = await res.json();
+                    return gachaConfig;
+                }
+            } catch (e) {
+                console.error('Failed to fetch gacha config:', e);
+            }
+            return null;
+        }
+
+        // Fetch user's inventory from server
+        async function fetchInventory() {
+            if (!currentUser) return;
+            try {
+                const res = await fetch(`/api/gacha/${currentChapter}/inventory/${currentUser.username}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    abilityInventory = data.abilityInventory || {};
+                    chapterCurrency = data.currency || 0;
+                    return data;
+                }
+            } catch (e) {
+                console.error('Failed to fetch inventory:', e);
+            }
+            return null;
+        }
 
         function getRarityClass(rarity) {
             return `rarity-${rarity}`;
@@ -497,7 +511,13 @@
             return icons[type] || '✨';
         }
 
-        function getCurrentCurrency() {
+        async function getCurrentCurrency() {
+            const inventory = await fetchInventory(currentChapter);
+            return inventory?.currency || 0;
+        }
+        
+        // Synchronous version for UI updates (uses cached data)
+        function getCurrentCurrencySync() {
             return chapterCurrency[currentChapter] || 0;
         }
 
@@ -515,7 +535,7 @@
                 iconEl.textContent = '❌';
             } else {
                 currencyEl.classList.remove('opacity-50');
-                pullsEl.textContent = getCurrentCurrency();
+                pullsEl.textContent = getCurrentCurrencySync();
                 nameEl.textContent = chapter.currencyName || 'Pulls';
                 iconEl.textContent = chapter.currencyIcon || '✨';
             }
@@ -617,7 +637,7 @@
                                     <div class="text-sm text-slate-400">Your ${chapter.currencyName || 'Pulls'}</div>
                                     <div class="text-4xl font-bold stat-value flex items-center gap-2">
                                         <span>${chapter.currencyIcon || '✨'}</span>
-                                        <span>${getCurrentCurrency()}</span>
+                                        <span>${getCurrentCurrencySync()}</span>
                                     </div>
                                 </div>
                             </div>
@@ -648,13 +668,14 @@
             container.innerHTML = '';
 
             chapter.parameters.forEach(param => {
-                const isOwned = unlockedParameters.includes(`${currentChapter}-${param.name}`);
+                const ownedCount = abilityInventory[param.name] || 0;
+                const isMaxed = ownedCount >= 5;
                 const card = document.createElement('div');
-                card.className = `ability-card glass rounded-xl p-4 border ${getRarityBg(param.rarity)} ${isOwned ? 'opacity-60' : ''}`;
+                card.className = `ability-card glass rounded-xl p-4 border ${getRarityBg(param.rarity)} ${isMaxed ? 'opacity-60' : ''}`;
                 card.innerHTML = `
                     <div class="flex items-start justify-between mb-2">
                         <span class="text-xs uppercase tracking-wider ${getRarityClass(param.rarity)} font-semibold">${param.rarity}</span>
-                        ${isOwned ? '<span class="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded">Owned</span>' : ''}
+                        ${ownedCount > 0 ? `<span class="text-xs ${isMaxed ? 'bg-amber-500/20 text-amber-400' : 'bg-emerald-500/20 text-emerald-400'} px-2 py-0.5 rounded">${ownedCount}/5 ${isMaxed ? '(MAX)' : ''}</span>` : ''}
                     </div>
                     <h3 class="text-lg font-semibold text-white mb-1">${getTypeIcon(param.type)} ${param.name}</h3>
                     <p class="text-slate-400 text-sm mb-2">${param.description}</p>
@@ -699,34 +720,53 @@
             return chapter.parameters[Math.floor(Math.random() * chapter.parameters.length)];
         }
 
-        function performPull(count) {
+        async function performPull(count) {
             const chapter = chapters.find(c => c.id === currentChapter);
             if (!chapter || !chapter.unlocked || !chapter.hasParams) return;
+            if (!currentUser) {
+                alert('You must be logged in to pull!');
+                return;
+            }
             
-            const currentCurrency = getCurrentCurrency();
-            if (currentCurrency < count) {
-                alert(`Not enough ${chapter.currencyName || 'currency'}!`);
+            const currentCurrency = getCurrentCurrencySync();
+            const cost = count * (gachaConfig?.pullCost || 1);
+            if (currentCurrency < cost) {
+                alert(`Not enough ${chapter.currencyName || 'currency'}! Need ${cost}, have ${currentCurrency}.`);
                 return;
             }
 
-            chapterCurrency[currentChapter] -= count;
-            updateCurrencyDisplay();
-
-            const results = [];
-            for (let i = 0; i < count; i++) {
-                const param = getRandomParameter();
-                if (param) {
-                    results.push(param);
-                    const paramKey = `${currentChapter}-${param.name}`;
-                    if (!unlockedParameters.includes(paramKey)) {
-                        unlockedParameters.push(paramKey);
-                    }
+            try {
+                const res = await fetch(`/api/gacha/${currentChapter}/pull`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: currentUser.username,
+                        count: count
+                    })
+                });
+                
+                if (!res.ok) {
+                    const error = await res.json();
+                    alert(error.error || 'Failed to pull!');
+                    return;
                 }
+                
+                const data = await res.json();
+                
+                // Update local currency cache
+                chapterCurrency[currentChapter] = data.remainingCurrency;
+                
+                // Update local ability inventory cache
+                abilityInventory = data.abilityInventory || {};
+                
+                updateCurrencyDisplay();
+                showResults(data.results);
+                renderBanner();
+                renderParameterPool();
+            } catch (err) {
+                console.error('Pull failed:', err);
+                alert('Failed to connect to server!');
             }
-
-            showResults(results);
-            renderBanner();
-            renderParameterPool();
         }
 
         function showResults(results) {
@@ -736,15 +776,20 @@
             section.classList.remove('hidden');
             grid.innerHTML = '';
 
-            results.forEach((param, index) => {
+            results.forEach((result, index) => {
+                // Server returns { ability, isNew, isDuplicate, wasWasted }
+                const param = result.ability || result;
+                const wasWasted = result.wasWasted || false;
                 const card = document.createElement('div');
-                card.className = `result-card glass rounded-xl p-4 border ${getRarityBg(param.rarity)} text-center`;
+                card.className = `result-card glass rounded-xl p-4 border ${getRarityBg(param.rarity)} text-center ${wasWasted ? 'opacity-50' : ''}`;
                 card.style.animationDelay = `${index * 0.1}s`;
                 card.innerHTML = `
                     <div class="text-3xl mb-2">${param.rarity === 'legendary' ? '🌟' : param.rarity === 'epic' ? '💎' : param.rarity === 'rare' ? '💠' : param.rarity === 'uncommon' ? '🔹' : '✨'}</div>
                     <div class="text-xs uppercase tracking-wider ${getRarityClass(param.rarity)} font-semibold mb-1">${param.rarity}</div>
                     <h3 class="text-sm font-semibold text-white">${param.name}</h3>
-                    <p class="text-xs text-slate-400 mt-1">${param.description}</p>
+                    <p class="text-xs text-slate-400 mt-1">${param.description || ''}</p>
+                    ${wasWasted ? '<p class="text-xs text-red-400 mt-2">Already at max (5/5)!</p>' : ''}
+                    ${result.isNew ? '<p class="text-xs text-emerald-400 mt-2">NEW!</p>' : ''}
                 `;
                 grid.appendChild(card);
             });
@@ -759,7 +804,16 @@
             window.history.pushState({}, '', url);
         }
 
-        function renderAll() {
+        async function renderAll() {
+            // Fetch inventory for current chapter when switching
+            if (currentUser) {
+                const inventory = await fetchInventory(currentChapter);
+                if (inventory) {
+                    chapterCurrency[currentChapter] = inventory.currency || 0;
+                    abilityInventory = inventory.abilityInventory || {};
+                }
+            }
+            
             renderChapterTabs();
             renderBanner();
             renderParameterPool();
@@ -771,10 +825,12 @@
             const chapter = chapters.find(c => c.id === currentChapter);
             const isLocked = !chapter || !chapter.unlocked;
             const noParams = !chapter || !chapter.hasParams;
-            const currentCurrency = getCurrentCurrency();
+            const currentCurrency = getCurrentCurrencySync();
+            const pullCost = gachaConfig?.pullCost || 1;
+            const multiCount = gachaConfig?.multiPullCount || 10;
             
-            document.getElementById('pull-single').disabled = isLocked || noParams || currentCurrency < 1;
-            document.getElementById('pull-multi').disabled = isLocked || noParams || currentCurrency < 10;
+            document.getElementById('pull-single').disabled = isLocked || noParams || currentCurrency < pullCost;
+            document.getElementById('pull-multi').disabled = isLocked || noParams || currentCurrency < (pullCost * multiCount);
         }
 
         // Event Listeners
@@ -789,6 +845,9 @@
             if (!currentUser) return;
             
             try {
+                // Fetch gacha config first
+                gachaConfig = await fetchGachaConfig();
+                
                 const res = await fetch(`/api/accounts/${currentUser.username}`);
                 if (res.ok) {
                     const data = await res.json();
@@ -805,17 +864,13 @@
                         if (chapterNum > 1 && data.chapters[chId].inventory) {
                             chapterCurrency[chapterNum] = data.chapters[chId].inventory.currency || 10;
                         }
-                        
-                        // Load unlocked parameters for this chapter
-                        if (data.chapters[chId].inventory?.unlockedParameters) {
-                            data.chapters[chId].inventory.unlockedParameters.forEach(param => {
-                                const paramKey = `${chapterNum}-${param}`;
-                                if (!unlockedParameters.includes(paramKey)) {
-                                    unlockedParameters.push(paramKey);
-                                }
-                            });
-                        }
                     });
+                    
+                    // Fetch current chapter's ability inventory
+                    const inventory = await fetchInventory(currentChapter);
+                    if (inventory && inventory.abilityInventory) {
+                        abilityInventory = inventory.abilityInventory;
+                    }
                     
                     updateCurrencyDisplay();
                 }
